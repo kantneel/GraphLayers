@@ -17,7 +17,7 @@ class GraphLayer(object):
             the embeddings of each node type (optional)
         - edge_type_ids ([num_nodes x num_nodes])
             what types each of these edges are (optional)
-        - edge_type_embeds ([num_edge_types x node_type_embed_size])
+        - edge_type_embeds ([num_edge_types x edge_type_embed_size])
             the embeddings of each edge type (optional)
         """
 
@@ -59,7 +59,3 @@ class GraphLayer(object):
     @abstractmethod
     def __call__(self):
         raise NotImplementedError()
-
-
-
-
