@@ -1,3 +1,5 @@
+from layer_list import GraphLayerList
+from layer import GraphLayer
 
 class GraphNetwork(object):
     """
@@ -30,12 +32,30 @@ class GraphNetwork(object):
         self.num_edge_types = num_edge_types
         self.edge_type_embed_size = edge_type_embed_size
 
-        self.layer_list = []
+        self._check_valid_args()
+
+        self.layer_list = GraphLayerList()
 
     def _check_valid_args(self):
-        # a bunch of assertions to make sure shapes make sense
-        # and are of valid types and that the optional arguments come
-        # in appropriate pairs
+        """
+        A bunch of assertions to make sure types make sense
+        and that the optional arguments come in appropriate pairs
+        """
+        pass
 
-    def add_layer(self):
+    def set_layer_list(self, layer_list):
+        assert isinstance(layer_list, GraphLayerList)
+        self.layer_list = layer_list
+
+
+    def add_layer(self, graph_layer):
+        self.layer_list.append(graph_layer)
+
+    def set_layer_list(self, graph_layer_list):
+        self.layer_list = graph_layer_list
+
+    def __str__(self):
+        pass
+
+    def __repr__(self):
         pass
