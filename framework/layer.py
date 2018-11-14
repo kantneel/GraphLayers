@@ -71,5 +71,5 @@ class GraphLayer(ABC):
         pass
 
     @abstractmethod
-    def __call__(self):
+    def compute_outputs(self):
         raise NotImplementedError()

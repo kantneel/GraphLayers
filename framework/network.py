@@ -43,16 +43,40 @@ class GraphNetwork(object):
         """
         pass
 
+    # -------------------------------------------------------------- #
+    # Working with the GraphLayerList
+    # -------------------------------------------------------------- #
+
+    @classmethod
+    def from_layer_list(cls, layer_list):
+        """Create GraphNetwork directly from layer_list"""
+        # placeholder. Need to extract actual data from layer_list.
+        args = [1, 1]
+        return cls(*args)
+
     def set_layer_list(self, layer_list):
         assert isinstance(layer_list, GraphLayerList)
         self.layer_list = layer_list
-
 
     def add_layer(self, graph_layer):
         self.layer_list.append(graph_layer)
 
     def set_layer_list(self, graph_layer_list):
         self.layer_list = graph_layer_list
+
+    def compute_outputs(self, input_node_embeddings, adj_matrix, ):
+        """Build the graph for outputs and return those outputs"""
+        preprocess_tools = self.get_preprocess_tools()
+
+        return self.layer_list.compute_outputs(preprocess_tools)
+
+    def get_preprocess_tools(self):
+        """
+        Mask for padded parts of input
+
+        """
+        preprocess_tools = None
+        return preprocess_tools
 
     def __str__(self):
         pass
