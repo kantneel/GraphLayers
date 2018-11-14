@@ -7,13 +7,12 @@ class GraphLayerList(object):
     """
     def __init__(self, layer_list=[]):
         """
-        Args
+        Args:
 
         layer_list: list in which each object is of type GraphLayer
         """
 
         self.layer_list = layer_list
-
         self._check_valid_args()
 
     def _check_valid_args(self):
@@ -42,6 +41,13 @@ class GraphLayerList(object):
         if self._check_compatible_append(layer):
             self.layer_list.append(layer)
 
+    def __call__(self):
+        """
+        The idea is to call each of the layers in sequence, giving the
+        outputs of one layer to its successor.
+        """
+        pass
+
     def __iter__(self):
         pass
 
@@ -50,5 +56,6 @@ class GraphLayerList(object):
 
     def __repr__(self):
         pass
+
 
 
