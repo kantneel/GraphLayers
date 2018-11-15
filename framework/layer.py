@@ -17,6 +17,7 @@ class GraphLayer(ABC):
         self.num_nodes = num_nodes
         self.node_embed_size = node_embed_size
         self.adj_matrix = adj_matrix
+        self.out_shape = self.compute_output_shape()
 
     def __str__(self):
         pass

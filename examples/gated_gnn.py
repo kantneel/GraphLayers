@@ -5,7 +5,8 @@ from layer import GraphLayer
 class GatedLayer(GraphLayer):
     """Layer from Gated Graph Sequence Neural Networks"""
 
-    def __init__(self, num_nodes, node_embed_size, adj_matrix,
+    def __init__(self, num_nodes, node_embed_size,
+                 adj_matrix, num_timesteps,
                  node_type_ids=None, node_type_embeds=None,
                  edge_type_ids=None, edge_type_embeds=None):
         """
@@ -22,6 +23,7 @@ class GatedLayer(GraphLayer):
         """
 
         super().__init__(num_nodes, node_embed_size, adj_matrix)
+        self.num_timesteps = num_timesteps
         self.node_type_ids = node_type_ids
         self.node_type_embeds = node_type_embeds
         self.edge_type_ids = edge_type_ids
@@ -32,21 +34,36 @@ class GatedLayer(GraphLayer):
         if isinstance(self.adj_matrix, tf.SparseTensor):
             self.sparse_adj = True
 
-        if node_type_embeds is not None:
+        self.set_node_type_attrs(node_type_ids, node_type_embeds)
+        self.set_edge_type_attrs(edge_type_ids, edge_type_embeds)
+
+    def set_node_type_attrs(self, ids, embeds):
+        """Takes tf.tensors/ops/placeholders and assigns the values"""
+        self.has_node_types = False
+        if ids is not None:
+            # TODO: check ids shape and embeds shape
+            self.has_node_types = True
+            self.node_type_ids = ids
+            self.node_type_embeds = embeds
+
             # the number of node types this layer can use
             self.num_node_types = tf.shape(self.node_type_embeds)[0]
             # the dimension of node type embeds
             self.node_type_embed_size = tf.shape(self.node_type_embeds)[1]
-        else:
-            self.num_node_types = self.node_type_embed_size = None
 
-        if edge_type_embeds is not None:
+    def set_edge_type_attrs(self, ids, embeds):
+        """Takes tf.tensors/ops/placeholders and assigns the values"""
+        self.has_edge_types = False
+        if ids is not None:
+            # TODO: check ids shape and embeds shape
+            self.has_edge_types = True
+            self.edge_type_ids = ids
+            self.edge_type_embeds = embeds
+
             # the number of edge types this layer can use
             self.num_edge_types = tf.shape(self.edge_type_embeds)[0]
             # the dimension of edge type embeds
             self.edge_type_embed_size = tf.shape(self.edge_type_embeds)[1]
-        else:
-            self.num_edge_types = self.edge_type_embed_size = None
 
     def _check_valid_args(self):
         """
