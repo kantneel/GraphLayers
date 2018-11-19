@@ -8,6 +8,29 @@ class ModelManager(object):
         self.params = model.params
         self.args = model.params.args
 
+    def build_graph_model(self, mode='training', restore_file=None):
+        possible_modes = ['training', 'testing', 'inference']
+        if mode not in possible_modes:
+            raise NotImplementedError("Mode has to be one of {}".format(", ".join(possible_modes)))
+
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.graph = tf.Graph()
+        self.sess = tf.Session(graph=self.graph, config=config)
+        with self.graph.as_default():
+            tf.set_random_seed(self.params['random_seed'])
+            self.placeholders = {}
+            self.weights = {}
+            self.ops = {}
+            self.make_model(mode=mode)
+            if mode == 'training':
+                self.make_train_step()
+
+            if restore_file is None:
+                self.initialize_model()
+            else:
+                self.restore_model(restore_file)
+
     def initialize_model(self):
         init_op = tf.group(tf.global_variables_initializer(),
                            tf.local_variables_initializer())
