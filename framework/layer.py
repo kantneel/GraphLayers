@@ -14,6 +14,12 @@ class GraphLayer(ABC):
         - adj_matrix ([num_nodes x num_nodes]):
             which nodes are connected to one another in directed edges
         """
+
+        """
+        node label embed dim
+        edge label embed dim
+        node embed dim
+        """
         self.num_nodes = num_nodes
         self.node_embed_size = node_embed_size
         self.adj_matrix = adj_matrix

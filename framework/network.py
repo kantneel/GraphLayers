@@ -7,6 +7,13 @@ class GraphNetwork(object):
     which does not depend on the specific GraphLayers.
     """
 
+    """
+    # nodes
+    # node labels
+    # edge labels
+
+    """
+
     def __init__(self, num_nodes, node_embed_size,
                  num_node_types=None, node_type_embed_size=None,
                  num_edge_types=None, edge_type_embed_size=None):
