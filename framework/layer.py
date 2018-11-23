@@ -5,12 +5,8 @@ class GraphLayer(ABC):
     # https://github.com/tensorflow/tensorflow/blob/r1.12/tensorflow/python/ops/rnn_cell_impl.py#L174
     # https://github.com/tensorflow/tensorflow/blob/r1.12/tensorflow/python/keras/engine/base_layer.py#L71
 
-    def __init__(self, node_embed_dim, node_label_embed_dim,
-                 edge_label_embed_dim, output_embed_dim, **kwargs):
-        self.node_embed_dim = node_embed_dim
-        self.node_label_embed_dim = node_label_embed_dim
-        self.edge_label_embed_dim = edge_label_embed_dim
-        self.output_embed_dim = output_embed_dim
+    def __init__(self, layer_params):
+        self.layer_params = layer_params
 
     def __str__(self):
         pass
