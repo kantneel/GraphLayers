@@ -17,11 +17,3 @@ class GraphLayer(ABC):
     @abstractmethod
     def __call__(self):
         raise NotImplementedError("Abstract Method")
-
-    def compute_output_shape(self):
-        """
-        Find out what the output shape is. This is important for
-        building a GraphLayerList, and also knowing what the output
-        shape is of an entire GraphNetwork.
-        """
-        pass
