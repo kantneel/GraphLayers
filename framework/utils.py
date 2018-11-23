@@ -21,3 +21,15 @@ class GraphLayerParams(namedtuple('GraphLayerParams',
 
     def check_valid_args(self, args):
         pass
+
+class GraphLayerPlaceholders(namedtuple('GraphLayerPlaceholders',
+                                        ['input_node_embeds', 'adjacency_lists',
+                                         'num_incoming_edges_per_label',
+                                         'graph_nodes_list']
+
+    def __init__(self, *args):
+        self.check_valid_args(args)
+        super().__init__(args)
+
+    def check_valid_args(self, args):
+        pass

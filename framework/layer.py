@@ -5,8 +5,10 @@ class GraphLayer(ABC):
     # https://github.com/tensorflow/tensorflow/blob/r1.12/tensorflow/python/ops/rnn_cell_impl.py#L174
     # https://github.com/tensorflow/tensorflow/blob/r1.12/tensorflow/python/keras/engine/base_layer.py#L71
 
-    def __init__(self, layer_params):
+    def __init__(self, layer_params, network_params, name):
         self.layer_params = layer_params
+        self.network_params = network_params
+        self.name = name
 
     def __str__(self):
         pass
