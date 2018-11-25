@@ -55,7 +55,7 @@ class GatedLayer(GraphLayer):
 
             # create weights for attention @sparse:302
 
-    def compute_final_representations(self, placeholders):
+    def __call__(self, placeholders):
         # Used shape abbreviations:
         #   V ~ number of nodes
         #   D ~ state dimension
