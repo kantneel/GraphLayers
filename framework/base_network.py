@@ -8,10 +8,6 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from abc import ABC, abstractmethod
-
-from typing import Iterable
-
 import tqdm
 import yaml
 
@@ -20,100 +16,27 @@ from ggnn.utils import ParamsNamespace
 from ggnn.models import utils
 
 
-class BaseGGNN(ABC):
-    def __init__(self):
-        self.params: ParamsNamespace = ParamsNamespace()
-        self.params.update(self.default_params())
+class GraphNetwork(object):
+    def __init__(self, network_params):
+        self.network_params = network_params
+        self.layers = []
 
-    @classmethod
-    def default_params(cls):
-        return {
-            'args': ParamsNamespace(),
-            'num_epochs': 3000,
-            'patience': 25,
-            'lr': 0.001,
-            'clamp_gradient_norm': 1.0,
-            'out_layer_dropout_keep_prob': 1.0,
+    def add_layer(self, new_layer):
+        self.layers.append(new_layer)
+        # check that layer properties are compatible
 
-            'hidden_size_node': 100,
-            'hidden_size_final_mlp': 100,
-            'num_timesteps': 4,
+    def __call__(self, placeholders):
+        results = placeholders
+        for layer in self.layers:
+            results = layer(results)
 
-            'tie_fwd_bkwd': True,
-
-            'random_seed': 0,
-        }
-
-    @classmethod
-    def from_params(cls, params: ParamsNamespace):
-        res = cls()
-        res.params.update(params)
-        return res
-
-        # --------------------------------------------------------------- #
-        #  Model Definition
-        # --------------------------------------------------------------- #
-
-    def make_model(self, mode):
-        self.define_placeholders()
-
-        #  First, compute the node-level representations, after the message-passing algorithm
-        with tf.variable_scope("graph_model"):
-            self.prepare_specific_graph_model()
-            self.ops['final_node_representations'] = self.compute_final_node_representations()
-
-        with tf.variable_scope("out_layer"):
-            # Should return logits with dimension equal to the number of output classes
-            logits = self.prepare_final_layer()
-            labels = self.placeholders['target_values']
-
-            loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-
-            self.ops['loss'] = tf.reduce_mean(loss)
-            probabilities = tf.nn.softmax(logits)
-
-            correct_prediction = tf.equal(tf.argmax(probabilities, -1), self.placeholders['target_values'])
-            self.ops['accuracy_task'] = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-
-            top_k = tf.nn.top_k(probabilities, k=self.params['num_classes'])
-            self.ops['preds'] = top_k.indices
-            self.ops['probs'] = top_k.values
+        return results
 
     def define_placeholders(self):
         self.placeholders['target_values'] = tf.placeholder(tf.int64, [None], name='target_values')
         self.placeholders['num_graphs'] = tf.placeholder(tf.int32, [], name='num_graphs')
         self.placeholders['out_layer_dropout_keep_prob'] = tf.placeholder(tf.float32, [],
                                                                           name='out_layer_dropout_keep_prob')
-
-    @abstractmethod
-    def prepare_specific_graph_model(self):
-        pass
-
-    @abstractmethod
-    def compute_final_node_representations(self) -> tf.Tensor:
-        pass
-
-    def prepare_final_layer(self):
-        #  By default, pools up the node-embeddings (sum by default),
-        #  and applies a simple MLP
-        pooled = self.perform_pooling(self.ops['final_node_representations'])
-        self.ops['final_predictor'] = self.final_predictor()
-        return self.ops['final_predictor'](pooled)
-
-    def perform_pooling(self, last_h):
-        #  By default, it simply sums up the node embeddings
-        #  We do not assume sorted segment_ids
-        graph_node_sums = tf.unsorted_segment_sum(data=last_h,  # [v x h]
-                                                  segment_ids=self.placeholders['graph_nodes_list'],
-                                                  num_segments=self.placeholders['num_graphs'])  # [g x h]
-
-        return graph_node_sums
-
-    def final_predictor(self):
-        #  By default, a simple MLP with one hidden layer
-        return utils.MLP(self.params['hidden_size_node'], self.params['num_classes'],
-                         [self.params['hidden_size_final_mlp']],
-                         self.placeholders['out_layer_dropout_keep_prob'])
 
     # --------------------------------------------------------------- #
     #  Model Training Definition
@@ -215,54 +138,4 @@ class BaseGGNN(ABC):
 
         # Initialize newly-introduced variables:
         self.sess.run(tf.local_variables_initializer())
-
-    # --------------------------------------------------------------- #
-    #  Data Processing
-    # --------------------------------------------------------------- #
-
-    @abstractmethod
-    def preprocess_data(self, path, is_training_data=False):
-        pass
-
-    def load_data(self, path, is_training_data=False):
-        reader = IndexedFileReader(path)
-        if self.params.args.get('use_memory', False):
-            result = self.process_raw_graphs(reader, is_training_data)
-            reader.close()
-            return result
-
-        if self.params.args.get('use_disk', False):
-            w = IndexedFileWriter(path + '.processed')
-            for d in tqdm.tqdm(reader, desc='Dumping processed graphs to disk'):
-                w.append(pickle.dumps(self.process_raw_graph(d)))
-
-            w.close()
-            reader.close()
-            return IndexedFileReader(path + '.processed')
-
-        #  We won't pre-process anything. We'll convert on-the-fly. Saves memory but is very slow and wasteful
-        reader.set_loader(lambda x: self.process_raw_graph(pickle.load(x)))
-        return reader
-
-    def process_raw_graphs(self, raw_data: Iterable, is_training_data: bool = False):
-        processed_graphs = []
-        for d in tqdm.tqdm(raw_data, desc='Processing Raw Data'):
-            processed_graphs.append(self.process_raw_graph(d))
-
-        if is_training_data:
-            np.random.shuffle(processed_graphs)
-
-        return processed_graphs
-
-    @abstractmethod
-    def process_raw_graph(self, graph):
-        pass
-
-    @abstractmethod
-    def make_minibatch_iterator(self, data, is_training: bool):
-        pass
-
-    @abstractmethod
-    def save_interface(self, path: str):
-        pass
 

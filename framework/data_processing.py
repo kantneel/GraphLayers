@@ -18,6 +18,36 @@ def preprocess_data(path, tie_fwd_bkwd=True):
 
     return params
 
+def load_data(path, use_memory=False, use_disk=False, is_training_data=False):
+    reader = IndexedFileReader(path)
+    if use_memory
+        result = process_raw_graphs(reader, is_training_data)
+        reader.close()
+        return result
+
+    if use_disk:
+        w = IndexedFileWriter(path + '.processed')
+        for d in tqdm.tqdm(reader, desc='Dumping processed graphs to disk'):
+            w.append(pickle.dumps(process_raw_graph(d)))
+
+        w.close()
+        reader.close()
+        return IndexedFileReader(path + '.processed')
+
+    #  We won't pre-process anything. We'll convert on-the-fly. Saves memory but is very slow and wasteful
+    reader.set_loader(lambda x: process_raw_graph(pickle.load(x)))
+    return reader
+
+def process_raw_graphs(raw_data, annotation_size, is_training_data=False):
+    processed_graphs = []
+    for d in tqdm.tqdm(raw_data, desc='Processing Raw Data'):
+        processed_graphs.append(process_raw_graph(d, annotation_size))
+
+    if is_training_data:
+        np.random.shuffle(processed_graphs)
+
+    return processed_graphs
+
 def process_raw_graph(graph, annotation_size):
     (adjacency_lists, num_incoming_edge_per_type) = graph_to_adjacency_lists(graph['edges'])
     return {"adjacency_lists": adjacency_lists,
