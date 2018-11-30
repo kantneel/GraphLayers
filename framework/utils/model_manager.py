@@ -78,3 +78,29 @@ class ModelManager(object):
 
         with open(path, 'wb') as out_file:
             pickle.dump(data_to_save, out_file, pickle.HIGHEST_PROTOCOL)
+
+    def make_train_step(self):
+        trainable_vars = self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+        if self.params.args.freeze_graph_model:
+            graph_vars = set(self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="graph_model"))
+            filtered_vars = []
+            for var in trainable_vars:
+                if var not in graph_vars:
+                    filtered_vars.append(var)
+                else:
+                    print("Freezing weights of variable %s." % var.name)
+            trainable_vars = filtered_vars
+
+        optimizer = tf.train.AdamOptimizer(self.params['lr'])
+        grads_and_vars = optimizer.compute_gradients(self.ops['loss'], var_list=trainable_vars)
+        clipped_grads = []
+        for grad, var in grads_and_vars:
+            if grad is not None:
+                clipped_grads.append((tf.clip_by_norm(grad, self.params['clamp_gradient_norm']), var))
+            else:
+                clipped_grads.append((grad, var))
+
+        self.ops['train_step'] = optimizer.apply_gradients(clipped_grads)
+
+        # Initialize newly-introduced variables:
+        self.sess.run(tf.local_variables_initializer())
