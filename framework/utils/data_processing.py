@@ -1,95 +1,99 @@
-def preprocess_data(path, tie_fwd_bkwd=True):
-    reader = IndexedFileReader(path)
+class DataProcessor(object):
+    def __init__(self):
+        pass
 
-    num_fwd_edge_types = 0
-    annotation_size = 0
-    num_classes = 0
-    depth = 1
-    for g in tqdm.tqdm(reader, desc='Preliminary Data Pass', dynamic_ncols=True):
-        num_fwd_edge_types = max(num_fwd_edge_types, max([e[1] for e in g['edges']] + [-1]) + 1)
-        annotation_size = max(annotation_size, max(g['node_features']) + 1)
-        num_classes = max(num_classes, g['label'] + 1)
+    def preprocess_data(self, path, tie_fwd_bkwd=True):
+        reader = IndexedFileReader(path)
 
-    params = {}
-    params['num_edge_types'] = num_fwd_edge_types * (1 if tie_fwd_bkwd else 2)
-    params['annotation_size'] = annotation_size
-    params['num_classes'] = num_classes
-    reader.close()
+        num_fwd_edge_labels = 0
+        num_node_labels = 0
+        num_classes = 0
+        depth = 1
+        for g in tqdm.tqdm(reader, desc='Preliminary Data Pass', dynamic_ncols=True):
+            num_fwd_edge_labels = max(num_fwd_edge_labels, max([e[1] for e in g['edges']] + [-1]) + 1)
+            num_node_labels = max(num_node_labels, max(g['node_features']) + 1)
+            num_classes = max(num_classes, g['label'] + 1)
 
-    return params
-
-def load_data(path, use_memory=False, use_disk=False, is_training_data=False):
-    reader = IndexedFileReader(path)
-    if use_memory
-        result = process_raw_graphs(reader, is_training_data)
+        params = {
+            'num_edge_labels' : num_fwd_edge_labels * (1 if tie_fwd_bkwd else 2),
+            'num_node_labels' : num_node_labels,
+            'num_classes' : num_classes
+        }
         reader.close()
-        return result
+        return params
 
-    if use_disk:
-        w = IndexedFileWriter(path + '.processed')
-        for d in tqdm.tqdm(reader, desc='Dumping processed graphs to disk'):
-            w.append(pickle.dumps(process_raw_graph(d)))
+    def load_data(self, path, use_memory=False, use_disk=False, is_training_data=False):
+        reader = IndexedFileReader(path)
+        if use_memory
+            result = self.process_raw_graphs(reader, is_training_data)
+            reader.close()
+            return result
 
-        w.close()
-        reader.close()
-        return IndexedFileReader(path + '.processed')
+        if use_disk:
+            w = IndexedFileWriter(path + '.processed')
+            for d in tqdm.tqdm(reader, desc='Dumping processed graphs to disk'):
+                w.append(pickle.dumps(self.process_raw_graph(d)))
 
-    #  We won't pre-process anything. We'll convert on-the-fly. Saves memory but is very slow and wasteful
-    reader.set_loader(lambda x: process_raw_graph(pickle.load(x)))
-    return reader
+            w.close()
+            reader.close()
+            return IndexedFileReader(path + '.processed')
 
-def process_raw_graphs(raw_data, annotation_size, is_training_data=False):
-    processed_graphs = []
-    for d in tqdm.tqdm(raw_data, desc='Processing Raw Data'):
-        processed_graphs.append(process_raw_graph(d, annotation_size))
+        #  We won't pre-process anything. We'll convert on-the-fly. Saves memory but is very slow and wasteful
+        reader.set_loader(lambda x: self.process_raw_graph(pickle.load(x)))
+        return reader
 
-    if is_training_data:
-        np.random.shuffle(processed_graphs)
+    def process_raw_graphs(self, raw_data, num_node_labels, is_training_data=False):
+        processed_graphs = []
+        for d in tqdm.tqdm(raw_data, desc='Processing Raw Data'):
+            processed_graphs.append(self.process_raw_graph(d, num_node_labels))
 
-    return processed_graphs
+        if is_training_data:
+            np.random.shuffle(processed_graphs)
 
-def process_raw_graph(graph, annotation_size):
-    (adjacency_lists, num_incoming_edge_per_type) = graph_to_adjacency_lists(graph['edges'])
-    return {"adjacency_lists": adjacency_lists,
-            "num_incoming_edge_per_type": num_incoming_edge_per_type,
-            "init": to_one_hot(graph["node_features"], annotation_size),
-            "label": graph.get("label", 0)}
+        return processed_graphs
 
-def graph_to_adjacency_lists(graph, num_edge_labels, tie_fwd_bkwd=True) -> Tuple[Dict[int, np.ndarray], Dict[int, Dict[int, int]]]:
-    adj_lists = collections.defaultdict(list)
-    num_incoming_edges_dicts_per_type = {}
-    for src, e, dest in graph:
-        fwd_edge_type = e
-        adj_lists[fwd_edge_type].append((src, dest))
-        if fwd_edge_type not in num_incoming_edges_dicts_per_type:
-            num_incoming_edges_dicts_per_type[fwd_edge_type] = collections.defaultdict(int)
+    def process_raw_graph(self, graph, num_node_labels):
+        (adjacency_lists, num_incoming_edge_per_label) = self.graph_to_adjacency_lists(graph['edges'])
+        return {"adjacency_lists": adjacency_lists,
+                "num_incoming_edge_per_label": num_incoming_edge_per_label,
+                "init": self.to_one_hot(graph["node_features"], num_node_labels),
+                "label": graph.get("label", 0)}
 
-        num_incoming_edges_dicts_per_type[fwd_edge_type][dest] += 1
-        if tie_fwd_bkwd:
-            adj_lists[fwd_edge_type].append((dest, src))
-            num_incoming_edges_dicts_per_type[fwd_edge_type][src] += 1
+    def graph_to_adjacency_lists(self, graph, num_edge_labels, tie_fwd_bkwd=True):
+        adj_lists = collections.defaultdict(list)
+        num_incoming_edges_dicts_per_label = {}
+        for src, e, dest in graph:
+            fwd_edge_label = e
+            adj_lists[fwd_edge_label].append((src, dest))
+            if fwd_edge_label not in num_incoming_edges_dicts_per_label:
+                num_incoming_edges_dicts_per_label[fwd_edge_label] = collections.defaultdict(int)
 
-    final_adj_lists = {e: np.array(sorted(lm), dtype=np.int32)
-                       for e, lm in adj_lists.items()}
+            num_incoming_edges_dicts_per_label[fwd_edge_label][dest] += 1
+            if tie_fwd_bkwd:
+                adj_lists[fwd_edge_label].append((dest, src))
+                num_incoming_edges_dicts_per_label[fwd_edge_label][src] += 1
 
-    # Add backward edges as an additional edge type that goes backwards:
-    if not (tie_fwd_bkwd):
-        for (edge_type, edges) in adj_lists.items():
-            bwd_edge_type = num_edge_labels + edge_type
-            final_adj_lists[bwd_edge_type] = np.array(sorted((y, x) for (x, y) in edges), dtype=np.int32)
-            if bwd_edge_type not in num_incoming_edges_dicts_per_type:
-                num_incoming_edges_dicts_per_type[bwd_edge_type] = collections.defaultdict(int)
+        final_adj_lists = {e: np.array(sorted(lm), dtype=np.int32)
+                           for e, lm in adj_lists.items()}
 
-            for (x, y) in edges:
-                num_incoming_edges_dicts_per_type[bwd_edge_type][y] += 1
+        # Add backward edges as an additional edge type that goes backwards:
+        if not (tie_fwd_bkwd):
+            for (edge_type, edges) in adj_lists.items():
+                bwd_edge_label = num_edge_labels + edge_label
+                final_adj_lists[bwd_edge_label] = np.array(sorted((y, x) for (x, y) in edges), dtype=np.int32)
+                if bwd_edge_label not in num_incoming_edges_dicts_per_label:
+                    num_incoming_edges_dicts_per_label[bwd_edge_label] = collections.defaultdict(int)
 
-    return final_adj_lists, num_incoming_edges_dicts_per_type
+                for (x, y) in edges:
+                    num_incoming_edges_dicts_per_label[bwd_edge_label][y] += 1
 
-def to_one_hot(vals: List[int], depth: int):
-    res = []
-    for val in vals:
-        v = [0] * depth
-        v[val] = 1
-        res.append(v)
+        return final_adj_lists, num_incoming_edges_dicts_per_label
 
-    return res
+    def to_one_hot(self, vals, depth):
+        res = []
+        for val in vals:
+            v = [0] * depth
+            v[val] = 1
+            res.append(v)
+
+        return res

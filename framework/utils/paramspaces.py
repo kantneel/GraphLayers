@@ -25,14 +25,20 @@ class GraphLayerParams(object):
     def check_valid_args(self, args):
         pass
 
-class GraphLayerPlaceholders(object):
-    def __init__(self, input_node_embeds, adjacency_lists,
-                 num_incoming_edges_per_label, graph_nodes_list):
+class GraphNetworkPlaceholders(object):
+    def __init__(self, input_node_embeds, num_graphs, adjacency_lists,
+                 num_incoming_edges_per_label, graph_nodes_list, targets):
         self.check_valid_args(args)
+
+        # to be used at every layer
         self.input_node_embeds = input_node_embeds
         self.adjacency_lists = adjacency_lists
         self.num_incoming_edges_per_label = num_incoming_edges_per_label
+
+        self.num_graph = num_graphs
         self.graph_nodes_list = graph_nodes_list
+        self.targets = targets
 
     def check_valid_args(self, args):
         pass
+
