@@ -30,22 +30,22 @@ class GatedLayer(GraphLayer):
         with tf.variable_scope(self.name):
             edge_weights = tf.Variable(
                 utils.glorot_init([
-                    net_p.num_edge_labels * layer_p.node_embed_dim,
-                    layer_p.node_embed_dim]),
+                    net_p.num_edge_labels * layer_p.node_embed_size,
+                    layer_p.node_embed_size]),
                 name='{0}_edge_weights'.format(self.name))
 
             edge_weights = tf.reshape(edge_weights, [net_p.num_edge_labels,
-                                                     layer_p.node_embed_dim,
-                                                     layer_p.node_embed_dim])
+                                                     layer_p.node_embed_size,
+                                                     layer_p.node_embed_size])
             self.edge_weights = tf.nn.dropout(edge_weights,
                                               keep_prob=self.edge_dropout_keep_prob)
             self.edge_biases = tf.Variable(np.zeros([net_p.num_edge_labels,
-                                                     layer_p.node_embed_dim],
+                                                     layer_p.node_embed_size],
                                                     dtype=np.float32),
                                            name='{0}_edge_bias'.format(self.name))
 
             if self.cell_type == 'gru':
-                cell = tf.nn.rnn_cell.GRUCell(net_p.node_embed_dim,
+                cell = tf.nn.rnn_cell.GRUCell(net_p.node_embed_size,
                                               activation=self.activation)
             else:
                 raise Exception('unsupported rnn cell type')
@@ -118,5 +118,5 @@ class GatedLayer(GraphLayer):
                     timestep_node_embeds.append(self.rnn_cell(incoming_information,
                                                               timestep_node_embeds[-1]))[1] # Shape [V, D]
 
-
-        return timestep_node_embeds[-1]
+        placeholders.input_node_embeds = timestep_node_embeds[-1]
+        return placeholders
