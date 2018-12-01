@@ -1,8 +1,8 @@
 import sys
-sys.path.append('../framework/')
+sys.path.append('../../')
 import tensorflow as tf
 import numpy as np
-from layer import GraphLayer
+from framework.model.layer import GraphLayer
 
 class GatedLayer(GraphLayer):
     def __init__(self, layer_params, network_params,
@@ -119,4 +119,4 @@ class GatedLayer(GraphLayer):
                                                               timestep_node_embeds[-1]))[1] # Shape [V, D]
 
 
-    return timestep_node_embeds[-1]
+        return timestep_node_embeds[-1]
