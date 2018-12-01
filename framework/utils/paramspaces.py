@@ -11,16 +11,16 @@ class GraphNetworkParams(object):
         pass
 
 class GraphLayerParams(object):
-    def __init__(self, node_embed_dim, node_label_embed_dim=None,
-                edge_label_embed_dim=None, output_embed_dim=None):
+    def __init__(self, node_embed_size, node_label_embed_size=None,
+                edge_label_embed_size=None, output_embed_size=None):
         self.check_valid_args(args)
-        self.node_embed_dim = node_embed_dim
-        self.node_label_embed_dim = node_label_embed_dim
-        self.edge_label_embed_dim = edge_label_embed_dim
-        if output_embed_dim is None:
-            self.output_embed_dim = self.node_embed_dim
+        self.node_embed_size = node_embed_size
+        self.node_label_embed_size = node_label_embed_size
+        self.edge_label_embed_size = edge_label_embed_size
+        if output_embed_size is None:
+            self.output_embed_size = self.node_embed_size
         else:
-            self.output_embed_dim = output_embed_dim
+            self.output_embed_size = output_embed_size
 
     def check_valid_args(self, args):
         pass
@@ -30,12 +30,13 @@ class GraphNetworkPlaceholders(object):
                  num_incoming_edges_per_label, graph_nodes_list, targets):
         self.check_valid_args(args)
 
-        # to be used at every layer
+        # to be used at every typical layer
         self.input_node_embeds = input_node_embeds
         self.adjacency_lists = adjacency_lists
         self.num_incoming_edges_per_label = num_incoming_edges_per_label
 
-        self.num_graph = num_graphs
+        # to be used by only some layers or the output
+        self.num_graphs = num_graphs
         self.graph_nodes_list = graph_nodes_list
         self.targets = targets
 
