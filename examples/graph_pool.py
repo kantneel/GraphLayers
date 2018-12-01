@@ -1,8 +1,8 @@
 import sys
-sys.path.append('../framework/')
+sys.path.append('../../')
 import tensorflow as tf
 import numpy as np
-from layer import GraphLayer
+from framework.layer import GraphLayer
 
 class PoolingLayer(GraphLayer):
     def __init__(self, layer_params, network_params,

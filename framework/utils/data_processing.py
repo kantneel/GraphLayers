@@ -4,6 +4,7 @@ import tqdm
 import pickle
 import collections
 import numpy as np
+import tensorflow as tf
 from framework.utils.io import IndexedFileReader, IndexedFileWriter
 
 
