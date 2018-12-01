@@ -17,9 +17,3 @@ class GraphNetwork(object):
             results = layer(results)
 
         return results
-
-    def define_placeholders(self):
-        self.placeholders['target_values'] = tf.placeholder(tf.int64, [None], name='target_values')
-        self.placeholders['num_graphs'] = tf.placeholder(tf.int32, [], name='num_graphs')
-        self.placeholders['out_layer_dropout_keep_prob'] = tf.placeholder(tf.float32, [],
-                                                                          name='out_layer_dropout_keep_prob')

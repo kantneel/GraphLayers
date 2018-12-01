@@ -1,6 +1,7 @@
 from framework.model.base_network import GraphNetwork
 from framework.model.layer import GraphLayer
 from examples.gated_gnn import GatedLayer
+from examples.graph_pool import PoolingLayer
 from framework.utils.paramspaces import GraphNetworkParams, GraphLayerParams, GraphNetworkPlaceholders
 from framework.utils.data_processing import DataProcessor
 
@@ -20,4 +21,12 @@ layer_params = GraphLayerParams(
     edge_label_embed_size=32)
 
 net = GraphNetwork(network_params)
+standard_gated_layer = GatedLayer(layer_params, network_params,
+                                  name='gated_1')
+
+net.add_layer(standard_gated_layer)
+net.add_layer(standard_gated_layer.clone(name='gated_2'))
+net.add_layer(PoolingLayer(layer_params, network_params)
+
+
 

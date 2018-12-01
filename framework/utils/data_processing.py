@@ -8,10 +8,13 @@ from framework.utils.io import IndexedFileReader, IndexedFileWriter
 
 
 class DataProcessor(object):
-    def __init__(self, path, tie_fwd_bkwd=True, is_training_data=False):
+    def __init__(self, path, network_params, layer_params, tie_fwd_bkwd=True, is_training_data=False):
         self.path = path
+        self.network_params = network_params
+        self.layer_params = layer_params
         self.tie_fwd_bkwd = tie_fwd_bkwd
         self.is_training_data = is_training_data
+        self.placeholders = self.define_placeholders()
 
         reader = IndexedFileReader(path)
 
@@ -28,6 +31,26 @@ class DataProcessor(object):
         self.num_edge_labels = num_fwd_edge_labels * (1 if tie_fwd_bkwd else 2)
         self.num_node_labels = num_node_labels
         self.num_classes = num_classes
+
+    def define_placeholders(self):
+        placeholders = {
+            'target_values' : tf.placeholder(tf.int64, [None], name='target_values'),
+            'num_graphs' : tf.placeholder(tf.int32, [], name='num_graphs'),
+            'graph_nodes_list' : tf.placeholder(tf.int32, [None], name='graph_nodes_list')
+            'graph_state_keep_prob' : tf.placeholder(tf.float32, None, name='graph_state_keep_prob')
+            'out_layer_dropout_keep_prob' : tf.placeholder(
+                tf.float32, [], name='out_layer_dropout_keep_prob'),
+            'initial_node_representation' : tf.placeholder(
+                tf.float32, [None, self.layer_params.node_embed_size], name='node_features')
+            'adjacency_lists' : [tf.placeholder(
+                tf.int32, [None, 2], name='adjacency_e%s' % e) for e in range(self.network_params.num_edge_labels)]
+            'num_incoming_edges_per_type' : tf.placeholder(
+                tf.float32, [None, self.network_params.num_edge_labels], name='num_incoming_edges_per_type')
+            'edge_weight_dropout_keep_prob' : tf.placeholder(
+                tf.float32, None, name='edge_weight_dropout_keep_prob')
+        }
+        return placeholders
+
 
     def load_data(self, path, use_memory=False, use_disk=False):
         reader = IndexedFileReader(path)
@@ -104,3 +127,73 @@ class DataProcessor(object):
             res.append(v)
 
         return res
+
+    def make_minibatch_iterator(self, dataset):
+        """Create minibatches by flattening adjacency matrices into a single adjacency matrix with
+        multiple disconnected components."""
+        if self.is_training_data:
+            if isinstance(dataset, IndexedFileReader):
+                dataset.shuffle()
+            else:
+                np.random.shuffle(dataset)
+
+        # Pack until we cannot fit more graphs in the batch
+        #state_dropout_keep_prob = self.params['graph_state_dropout_keep_prob'] if is_training else 1.
+        #edge_weights_dropout_keep_prob = self.params['edge_weight_dropout_keep_prob'] if is_training else 1.
+        state_dropout_keep_prob = edge_weights_dropout_keep_prob = 1
+        num_graphs = 0
+
+        while num_graphs < len(dataset):
+            num_graphs_in_batch = 0
+            batch_node_features = []
+            batch_target_task_values = []
+            batch_adjacency_lists = [[] for _ in range(self.network_params.num_edge_labels)]
+            batch_num_incoming_edges_per_type = []
+            batch_graph_nodes_list = []
+            node_offset = 0
+
+            while num_graphs < len(dataset) and node_offset + len(dataset[num_graphs]['init']) < self.network_params.num_nodes:
+                cur_graph = dataset[num_graphs]
+                num_nodes_in_graph = len(cur_graph['init'])
+                padded_features = np.pad(cur_graph['init'],
+                                         (
+                                             (0, 0),
+                                             (0, self.layer_params.node_embed_size - self.layer_params.node_label_embed_size)),
+                                         'constant')
+                batch_node_features.extend(padded_features)
+                batch_graph_nodes_list.append(
+                    np.full(shape=[num_nodes_in_graph], fill_value=num_graphs_in_batch, dtype=np.int32))
+                for i in range(self.network_params.num_edge_labels):
+                    if i in cur_graph['adjacency_lists']:
+                        batch_adjacency_lists[i].append(cur_graph['adjacency_lists'][i] + node_offset)
+
+                # Turn counters for incoming edges into np array:
+                num_incoming_edges_per_label = np.zeros((num_nodes_in_graph, self.network_params.num_edge_labels))
+                for (e_type, num_incoming_edges_per_label_dict) in cur_graph['num_incoming_edge_per_type'].items():
+                    for (node_id, edge_count) in num_incoming_edges_per_label_dict.items():
+                        num_incoming_edges_per_label[node_id, e_type] = edge_count
+                batch_num_incoming_edges_per_label.append(num_incoming_edges_per_label)
+                batch_target_task_values.append(cur_graph['label'])
+                num_graphs += 1
+                num_graphs_in_batch += 1
+                node_offset += num_nodes_in_graph
+
+            batch_feed_dict = {
+                self.placeholders['initial_node_representation']: np.array(batch_node_features),
+                self.placeholders['num_incoming_edges_per_type']: np.concatenate(batch_num_incoming_edges_per_type,
+                                                                                 axis=0),
+                self.placeholders['graph_nodes_list']: np.concatenate(batch_graph_nodes_list),
+                self.placeholders['target_values']: batch_target_task_values,
+                self.placeholders['num_graphs']: num_graphs_in_batch,
+                self.placeholders['graph_state_keep_prob']: state_dropout_keep_prob,
+                self.placeholders['edge_weight_dropout_keep_prob']: edge_weights_dropout_keep_prob
+            }
+            # Merge adjacency lists and information about incoming nodes:
+            for i in range(self.network_params.num_edge_labels):
+                if len(batch_adjacency_lists[i]) > 0:
+                    adj_list = np.concatenate(batch_adjacency_lists[i])
+                else:
+                    adj_list = np.zeros((0, 2), dtype=np.int32)
+                batch_feed_dict[self.placeholders['adjacency_lists'][i]] = adj_list
+
+            yield batch_feed_dict

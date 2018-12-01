@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from copy import copy
 
 class GraphLayer(ABC):
     """A GraphLayer is a function that transforms a set of node embeddings"""
@@ -9,6 +10,14 @@ class GraphLayer(ABC):
         self.layer_params = layer_params
         self.network_params = network_params
         self.name = name
+
+    def clone(self, name=None):
+        clone = copy(self)
+        if name is None:
+            clone.name += '_copy'
+        else:
+            clone.name = name
+        return clone
 
     def __str__(self):
         pass
