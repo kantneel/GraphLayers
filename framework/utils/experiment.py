@@ -1,12 +1,7 @@
 class ExperimentManager(object):
-    # Notes
-
-    # in train, model needs to save_model so use ModelManager
-
     def __init__(self, model, model_manager):
         self.model = model
         self.params = model.params
-        self.model_manager = model_manager
 
     def train(self, train_data, valid_data):
         log_to_save = []
@@ -101,7 +96,7 @@ class ExperimentManager(object):
         # --------------------------------------------------------------- #
 
     def test(self, test_data):
-        with self.graph.as_default():
+        with self.model.graph.as_default():
             result = self.run_test_epoch(test_data, perform_analysis=self.params.args.analysis)
             valid_loss, valid_acc, valid_speed, preds, targets = result
 

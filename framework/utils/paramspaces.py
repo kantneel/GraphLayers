@@ -2,7 +2,6 @@ from collections import namedtuple
 
 class GraphNetworkParams(object):
     def __init__(self, num_nodes, num_node_labels=1, num_edge_labels=1):
-        self.check_valid_args(args)
         self.num_nodes = num_nodes
         self.num_node_labels = num_node_labels
         self.num_edge_labels = num_edge_labels
@@ -14,7 +13,6 @@ class GraphNetworkParams(object):
 class GraphLayerParams(object):
     def __init__(self, node_embed_size, node_label_embed_size=None,
                 edge_label_embed_size=None, output_embed_size=None):
-        self.check_valid_args(args)
         self.node_embed_size = node_embed_size
         self.node_label_embed_size = node_label_embed_size
         self.edge_label_embed_size = edge_label_embed_size
@@ -28,16 +26,18 @@ class GraphLayerParams(object):
 
 
 class ExperimentParams(object):
-    def __init__(self, lr, num_epochs,
+    def __init__(self,
+                 lr=0.001,
+                 num_epochs=500,
                  patience=25,
                  analysis=False,
                  label_mapping=None,
                  wdir=None,
                  top_k=1,
-                 mode='training',
+                 mode='train',
                  model=None,
                  train=None,
-                 test=None,
+                 valid=None,
                  clamp_grad_norm=1,
                  rng=2018):
         self.lr = lr
@@ -45,13 +45,13 @@ class ExperimentParams(object):
         self.patience = patience
         self.analysis = analysis
         self.label_mapping = label_mapping
-        self.wir = wdir
+        self.wdir = wdir
         self.top_k = top_k
         self.mode = mode
         self.model = model
         self.train = train
-        self.test = test
-        self.clamp_grad_norm
+        self.valid = valid
+        self.clamp_grad_norm = clamp_grad_norm
         self.rng = rng
 
     def check_valid_args(self, args):
@@ -61,7 +61,6 @@ class ExperimentParams(object):
 class GraphNetworkPlaceholders(object):
     def __init__(self, input_node_embeds, num_graphs, adjacency_lists,
                  num_incoming_edges_per_label, graph_nodes_list, targets):
-        self.check_valid_args(args)
 
         # to be used at every typical layer
         self.input_node_embeds = input_node_embeds

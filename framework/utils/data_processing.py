@@ -9,13 +9,12 @@ from framework.utils.io import IndexedFileReader, IndexedFileWriter
 
 
 class DataProcessor(object):
-    def __init__(self, path, network_params, layer_params, tie_fwd_bkwd=True, is_training_data=False):
+    def __init__(self, path, batch_size, layer_params, tie_fwd_bkwd=True, is_training_data=False):
         self.path = path
-        self.network_params = network_params
+        self.batch_size = batch_size
         self.layer_params = layer_params
         self.tie_fwd_bkwd = tie_fwd_bkwd
         self.is_training_data = is_training_data
-        self.placeholders = self.define_placeholders()
 
         reader = IndexedFileReader(path)
 
@@ -33,20 +32,22 @@ class DataProcessor(object):
         self.num_node_labels = num_node_labels
         self.num_classes = num_classes
 
+        self.placeholders = self.define_placeholders()
+
     def define_placeholders(self):
         placeholders = {
             'target_values' : tf.placeholder(tf.int64, [None], name='target_values'),
             'num_graphs' : tf.placeholder(tf.int32, [], name='num_graphs'),
-            'graph_nodes_list' : tf.placeholder(tf.int32, [None], name='graph_nodes_list')
-            'graph_state_keep_prob' : tf.placeholder(tf.float32, None, name='graph_state_keep_prob')
+            'graph_nodes_list' : tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
+            'graph_state_keep_prob' : tf.placeholder(tf.float32, None, name='graph_state_keep_prob'),
             'out_layer_dropout_keep_prob' : tf.placeholder(
                 tf.float32, [], name='out_layer_dropout_keep_prob'),
             'initial_node_representation' : tf.placeholder(
-                tf.float32, [None, self.layer_params.node_embed_size], name='node_features')
+                tf.float32, [None, self.layer_params.node_embed_size], name='node_features'),
             'adjacency_lists' : [tf.placeholder(
-                tf.int32, [None, 2], name='adjacency_e%s' % e) for e in range(self.network_params.num_edge_labels)]
-            'num_incoming_edges_per_type' : tf.placeholder(
-                tf.float32, [None, self.network_params.num_edge_labels], name='num_incoming_edges_per_type')
+                tf.int32, [None, 2], name='adjacency_e%s' % e) for e in range(self.num_edge_labels)],
+            'num_incoming_edges_per_label' : tf.placeholder(
+                tf.float32, [None, self.num_edge_labels], name='num_incoming_edges_per_type'),
             'edge_weight_dropout_keep_prob' : tf.placeholder(
                 tf.float32, None, name='edge_weight_dropout_keep_prob')
         }
@@ -149,12 +150,12 @@ class DataProcessor(object):
             num_graphs_in_batch = 0
             batch_node_features = []
             batch_target_task_values = []
-            batch_adjacency_lists = [[] for _ in range(self.network_params.num_edge_labels)]
+            batch_adjacency_lists = [[] for _ in range(self.num_edge_labels)]
             batch_num_incoming_edges_per_type = []
             batch_graph_nodes_list = []
             node_offset = 0
 
-            while num_graphs < len(dataset) and node_offset + len(dataset[num_graphs]['init']) < self.network_params.num_nodes:
+            while num_graphs < len(dataset) and node_offset + len(dataset[num_graphs]['init']) < self.batch_size:
                 cur_graph = dataset[num_graphs]
                 num_nodes_in_graph = len(cur_graph['init'])
                 padded_features = np.pad(cur_graph['init'],
@@ -165,12 +166,12 @@ class DataProcessor(object):
                 batch_node_features.extend(padded_features)
                 batch_graph_nodes_list.append(
                     np.full(shape=[num_nodes_in_graph], fill_value=num_graphs_in_batch, dtype=np.int32))
-                for i in range(self.network_params.num_edge_labels):
+                for i in range(self.num_edge_labels):
                     if i in cur_graph['adjacency_lists']:
                         batch_adjacency_lists[i].append(cur_graph['adjacency_lists'][i] + node_offset)
 
                 # Turn counters for incoming edges into np array:
-                num_incoming_edges_per_label = np.zeros((num_nodes_in_graph, self.network_params.num_edge_labels))
+                num_incoming_edges_per_label = np.zeros((num_nodes_in_graph, self.num_edge_labels))
                 for (e_type, num_incoming_edges_per_label_dict) in cur_graph['num_incoming_edge_per_type'].items():
                     for (node_id, edge_count) in num_incoming_edges_per_label_dict.items():
                         num_incoming_edges_per_label[node_id, e_type] = edge_count
@@ -191,7 +192,7 @@ class DataProcessor(object):
                 self.placeholders['edge_weight_dropout_keep_prob']: edge_weights_dropout_keep_prob
             }
             # Merge adjacency lists and information about incoming nodes:
-            for i in range(self.network_params.num_edge_labels):
+            for i in range(self.num_edge_labels):
                 if len(batch_adjacency_lists[i]) > 0:
                     adj_list = np.concatenate(batch_adjacency_lists[i])
                 else:

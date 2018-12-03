@@ -2,35 +2,44 @@ import sys
 sys.path.append('../../')
 import pickle
 import time
+import os
+import random
+import numpy as np
 import tensorflow as tf
 from framework.utils.io import IndexedFileReader, IndexedFileWriter, ThreadedIterator
 
 class GraphNetwork(object):
     def __init__(self, network_params, exp_params, placeholders):
-        self.network_params = network_params
-        self.exp_params = exp_params
-        self.placeholders = placeholders
-        self.layers = []
-        self.ops = {}
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.graph = tf.Graph()
+        self.sess = tf.Session(graph=self.graph, config=config)
+        with self.graph.as_default():
+            self.network_params = network_params
+            self.exp_params = exp_params
+            self.placeholders = placeholders
+            self.layers = []
+            self.ops = {}
 
     def add_layer(self, new_layer):
         self.layers.append(new_layer)
         # check that layer properties are compatible
 
     def make_model(self, placeholders):
-        results = placeholders
+        outputs = [placeholders]
         for layer in self.layers:
-            results = layer(results)
+            outputs.append(layer(outputs[-1]))
+        results = outputs[-1]
 
         logits = results.input_node_embeds
-        labels = placeholders.target_valus
+        labels = placeholders.targets
         loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                               labels=labels)
 
         self.ops['loss'] = tf.reduce_mean(loss)
         probabilities = tf.nn.softmax(logits)
 
-        correct_prediction = tf.equal(tf.argmax(probabilities, -1), placeholders.target_values)
+        correct_prediction = tf.equal(tf.argmax(probabilities, -1), placeholders.targets)
         self.ops['accuracy_task'] = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
 
         top_k = tf.nn.top_k(probabilities, self.exp_params.top_k)
@@ -42,20 +51,14 @@ class GraphNetwork(object):
         if mode not in possible_modes:
             raise NotImplementedError("Mode has to be one of {}".format(", ".join(possible_modes)))
 
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        self.graph = tf.Graph()
-        self.sess = tf.Session(graph=self.graph, config=config)
-        with self.graph.as_default():
-            self.make_model(self.placeholders)
-            self.ops = {}
-            if mode == 'training':
-                self.make_train_step()
+        self.make_model(self.placeholders)
+        if mode == 'training':
+            self.make_train_step()
 
-            if restore_file is None:
-                self.initialize_model()
-            else:
-                self.restore_model(restore_file)
+        if restore_file is None:
+            self.initialize_model()
+        else:
+            self.restore_model(restore_file)
 
     def initialize_model(self):
         init_op = tf.group(tf.global_variables_initializer(),
@@ -105,8 +108,9 @@ class GraphNetwork(object):
         with open(path, 'wb') as out_file:
             pickle.dump(data_to_save, out_file, pickle.HIGHEST_PROTOCOL)
 
-    def make_train_step(self, lr):
-        trainable_vars = self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+    def make_train_step(self):
+        trainable_vars = self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        print(trainable_vars)
         #if self.params.args.freeze_graph_model:
         if False:
             graph_vars = set(self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="graph_model"))
@@ -118,7 +122,7 @@ class GraphNetwork(object):
                     print("Freezing weights of variable %s." % var.name)
             trainable_vars = filtered_vars
 
-        optimizer = tf.train.AdamOptimizer(lr)
+        optimizer = tf.train.AdamOptimizer(self.exp_params.lr)
         grads_and_vars = optimizer.compute_gradients(self.ops['loss'], var_list=trainable_vars)
         clipped_grads = []
         for grad, var in grads_and_vars:
@@ -181,7 +185,7 @@ class GraphNetwork(object):
 
                 elif epoch - best_val_acc_epoch >= self.exp_params.patience:
                     print("Stopping training after %i epochs without improvement on validation accuracy." % \
-                          self.exp_params.patience])
+                          self.exp_params.patience)
                     break
 
     def run_train_epoch(self, epoch_name, data_processor):
@@ -190,13 +194,13 @@ class GraphNetwork(object):
         accuracy_op = self.ops['accuracy_task']
         start_time = time.time()
         processed_graphs = 0
-        batch_iterator = ThreadedIterator(data_processor.make_minibatch_iterator()), max_queue_size=50)
+        batch_iterator = ThreadedIterator(data_processor.make_minibatch_iterator(), max_queue_size=50)
         for step, batch_data in enumerate(batch_iterator):
             num_graphs = batch_data[self.placeholders.num_graphs]
             processed_graphs += num_graphs
             if is_training:
                 #batch_data[self.placeholders['out_layer_dropout_keep_prob']] = self.params[
-                    'out_layer_dropout_keep_prob']
+                #    'out_layer_dropout_keep_prob']
                 fetch_list = [self.ops['loss'], accuracy_op, self.ops['train_step']]
             else:
                 #batch_data[self.placeholders['out_layer_dropout_keep_prob']] = 1.0
@@ -220,12 +224,12 @@ class GraphNetwork(object):
         instance_per_sec = processed_graphs / (time.time() - start_time)
         return loss, accuracy, instance_per_sec
 
-    def run(self, placeholders):
+    def run(self):
         if self.exp_params.mode == 'train':
             self.run_training()
 
     def run_training(self):
-        self.wdir: str = self.exp_params.outdir
+        self.wdir = self.exp_params.wdir
         if self.wdir is None:
             self.wdir = "_".join(["run", time.strftime("%Y-%m-%d-%H-%M-%S"), str(os.getpid())])
             os.system('rm -rf {}'.format(self.wdir))
@@ -247,9 +251,6 @@ class GraphNetwork(object):
 
         random.seed(self.exp_params.rng)
         np.random.seed(self.exp_params.rng)
-
-        #  Setup important data-specific params if any (such as num_classes, num_edge_types etc.)
-        self.preprocess_data(self.params.args.train, is_training_data=True)
 
         #  Setup the model
         self.build_graph_model(mode='training', restore_file=None)
