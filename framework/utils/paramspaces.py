@@ -10,6 +10,7 @@ class GraphNetworkParams(object):
     def check_valid_args(self, args):
         pass
 
+
 class GraphLayerParams(object):
     def __init__(self, node_embed_size, node_label_embed_size=None,
                 edge_label_embed_size=None, output_embed_size=None):
@@ -24,6 +25,38 @@ class GraphLayerParams(object):
 
     def check_valid_args(self, args):
         pass
+
+
+class ExperimentParams(object):
+    def __init__(self, lr, num_epochs,
+                 patience=25,
+                 analysis=False,
+                 label_mapping=None,
+                 wdir=None,
+                 top_k=1,
+                 mode='training',
+                 model=None,
+                 train=None,
+                 test=None,
+                 clamp_grad_norm=1,
+                 rng=2018):
+        self.lr = lr
+        self.num_epochs = num_epochs
+        self.patience = patience
+        self.analysis = analysis
+        self.label_mapping = label_mapping
+        self.wir = wdir
+        self.top_k = top_k
+        self.mode = mode
+        self.model = model
+        self.train = train
+        self.test = test
+        self.clamp_grad_norm
+        self.rng = rng
+
+    def check_valid_args(self, args):
+        pass
+
 
 class GraphNetworkPlaceholders(object):
     def __init__(self, input_node_embeds, num_graphs, adjacency_lists,
