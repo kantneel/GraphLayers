@@ -53,8 +53,8 @@ class DataProcessor(object):
         return placeholders
 
 
-    def load_data(self, path, use_memory=False, use_disk=False):
-        reader = IndexedFileReader(path)
+    def load_data(self, use_memory=False, use_disk=False):
+        reader = IndexedFileReader(self.path)
         if use_memory:
             result = self.process_raw_graphs(reader, self.is_training_data)
             reader.close()
@@ -129,9 +129,10 @@ class DataProcessor(object):
 
         return res
 
-    def make_minibatch_iterator(self, dataset):
+    def make_minibatch_iterator(self):
         """Create minibatches by flattening adjacency matrices into a single adjacency matrix with
         multiple disconnected components."""
+        dataset = self.load_data(use_memory=True)
         if self.is_training_data:
             if isinstance(dataset, IndexedFileReader):
                 dataset.shuffle()

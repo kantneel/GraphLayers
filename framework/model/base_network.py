@@ -1,13 +1,15 @@
 import sys
 sys.path.append('../../')
 import pickle
+import time
 import tensorflow as tf
 from framework.utils.io import IndexedFileReader, IndexedFileWriter, ThreadedIterator
 
 class GraphNetwork(object):
-    def __init__(self, network_params, exp_params):
+    def __init__(self, network_params, exp_params, placeholders):
         self.network_params = network_params
-        self.exp_params = experiment_params
+        self.exp_params = exp_params
+        self.placeholders = placeholders
         self.layers = []
         self.ops = {}
 
@@ -35,7 +37,7 @@ class GraphNetwork(object):
         self.ops['preds'] = top_k.indices
         self.ops['probs'] = top_k.values
 
-    def build_graph_model(self, placeholders, mode='training', restore_file=None):
+    def build_graph_model(self, mode='training', restore_file=None):
         possible_modes = ['training', 'testing', 'inference']
         if mode not in possible_modes:
             raise NotImplementedError("Mode has to be one of {}".format(", ".join(possible_modes)))
@@ -45,7 +47,7 @@ class GraphNetwork(object):
         self.graph = tf.Graph()
         self.sess = tf.Session(graph=self.graph, config=config)
         with self.graph.as_default():
-            self.make_model(placeholders)
+            self.make_model(self.placeholders)
             self.ops = {}
             if mode == 'training':
                 self.make_train_step()
@@ -130,7 +132,7 @@ class GraphNetwork(object):
         # Initialize newly-introduced variables:
         self.sess.run(tf.local_variables_initializer())
 
-    def train(self, train_data, valid_data):
+    def train(self):
         log_to_save = []
         total_time_start = time.time()
         with self.graph.as_default():
@@ -145,14 +147,15 @@ class GraphNetwork(object):
             # this will be undone in the first epoch
             for epoch in range(1, self.exp_params.num_epochs + 1):
                 print("== Epoch %i" % epoch)
-                train_loss, train_acc, train_speed = self.run_train_epoch("epoch %i (training)" % epoch,
-                                                                          train_data, True)
+                train_loss, train_acc, train_speed = self.run_train_epoch(
+                    "epoch %i (training)" % epoch, self.train_data_processor)
                 accs_str = "%.5f" % train_acc
                 print("\r\x1b[K Train: loss: %.5f | acc: %s | instances/sec: %.2f" % (train_loss,
                                                                                       accs_str,
                                                                                       train_speed))
-                valid_loss, valid_acc, valid_speed = self.run_train_epoch("epoch %i (validation)" % epoch,
-                                                                          valid_data, False)
+
+                valid_loss, valid_acc, valid_speed = self.run_train_epoch(
+                    "epoch %i (validation)" % epoch, self.valid_data_processor)
                 accs_str = "%.5f" % valid_acc
                 print("\r\x1b[K Valid: loss: %.5f | acc: %s | instances/sec: %.2f" % (valid_loss,
                                                                                       accs_str,
@@ -181,22 +184,22 @@ class GraphNetwork(object):
                           self.exp_params.patience])
                     break
 
-    def run_train_epoch(self, epoch_name, data, is_training):
+    def run_train_epoch(self, epoch_name, data_processor):
         loss = 0
         accuracy = 0
         accuracy_op = self.ops['accuracy_task']
         start_time = time.time()
         processed_graphs = 0
-        batch_iterator = utils.ThreadedIterator(self.make_minibatch_iterator(data, is_training), max_queue_size=50)
+        batch_iterator = ThreadedIterator(data_processor.make_minibatch_iterator()), max_queue_size=50)
         for step, batch_data in enumerate(batch_iterator):
-            num_graphs = batch_data[self.placeholders['num_graphs']]
+            num_graphs = batch_data[self.placeholders.num_graphs]
             processed_graphs += num_graphs
             if is_training:
-                batch_data[self.placeholders['out_layer_dropout_keep_prob']] = self.params[
+                #batch_data[self.placeholders['out_layer_dropout_keep_prob']] = self.params[
                     'out_layer_dropout_keep_prob']
                 fetch_list = [self.ops['loss'], accuracy_op, self.ops['train_step']]
             else:
-                batch_data[self.placeholders['out_layer_dropout_keep_prob']] = 1.0
+                #batch_data[self.placeholders['out_layer_dropout_keep_prob']] = 1.0
                 fetch_list = [self.ops['loss'], accuracy_op]
 
             result = self.sess.run(fetch_list, feed_dict=batch_data)
@@ -217,12 +220,9 @@ class GraphNetwork(object):
         instance_per_sec = processed_graphs / (time.time() - start_time)
         return loss, accuracy, instance_per_sec
 
-    def run(self):
+    def run(self, placeholders):
         if self.exp_params.mode == 'train':
             self.run_training()
-
-        elif self.params.args.mode == 'test':
-            self.run_testing()
 
     def run_training(self):
         self.wdir: str = self.exp_params.outdir
@@ -255,8 +255,11 @@ class GraphNetwork(object):
         self.build_graph_model(mode='training', restore_file=None)
 
         #  Load up the data
-        self.train_data = self.load_data(self.exp_params.train, is_training_data=True)
-        self.valid_data = self.load_data(self.exp_params.valid, is_training_data=False)
+        self.train_data_processor = DataProcessor(self.exp_params.train, self.network_params,
+                                        self.layers[0].layer_params, is_training_data=True)
 
-        self.train(self.train_data, self.valid_data)
+        self.valid_data_processor = DataProcessor(self.exp_params.valid, self.network_params,
+                                        self.layer[0].layer_params, is_training_data=False)
+
+        self.train()
 
