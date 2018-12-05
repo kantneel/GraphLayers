@@ -29,25 +29,26 @@ experiment_params = ExperimentParams(
 
 p = data_processor.placeholders
 placeholders = GraphNetworkPlaceholders(
-    input_node_embeds=p['initial_node_representation'],
+    input_node_embeds=p['input_node_embeds'],
+    node_labels=p['node_labels'],
     adjacency_lists=p['adjacency_lists'],
-    num_incoming_edges_per_label=p['num_incoming_edges_per_label'],
     num_graphs=p['num_graphs'],
     graph_nodes_list=p['graph_nodes_list'],
     targets=p['target_values']
 )
+graph = tf.Graph()
+with graph.as_default():
+    net = GraphNetwork(network_params, experiment_params, placeholders, graph)
+    standard_gated_layer = GatedLayer(layer_params, network_params,
+                                      name='gated_1')
 
-net = GraphNetwork(network_params, experiment_params, placeholders)
-standard_gated_layer = GatedLayer(layer_params, network_params,
-                                  name='gated_1')
+    net.add_layer(standard_gated_layer)
+    net.add_layer(standard_gated_layer.clone(name='gated_2'))
+    net.add_layer(PoolingLayer(layer_params, network_params))
+    net.add_layer(DenseOutputLayer(layer_params, network_params,
+                                   [128], data_processor.num_classes))
 
-net.add_layer(standard_gated_layer)
-net.add_layer(standard_gated_layer.clone(name='gated_2'))
-net.add_layer(PoolingLayer(layer_params, network_params))
-net.add_layer(DenseOutputLayer(layer_params, network_params,
-                               [128], data_processor.num_classes))
-
-net.run()
+    net.run()
 
 
 

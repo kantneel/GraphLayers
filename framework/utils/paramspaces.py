@@ -60,12 +60,12 @@ class ExperimentParams(object):
 
 class GraphNetworkPlaceholders(object):
     def __init__(self, input_node_embeds, num_graphs, adjacency_lists,
-                 num_incoming_edges_per_label, graph_nodes_list, targets):
+                 node_labels, graph_nodes_list, targets):
 
         # to be used at every typical layer
         self.input_node_embeds = input_node_embeds
+        self.node_labels = node_labels
         self.adjacency_lists = adjacency_lists
-        self.num_incoming_edges_per_label = num_incoming_edges_per_label
 
         # to be used by only some layers or the output
         self.num_graphs = num_graphs

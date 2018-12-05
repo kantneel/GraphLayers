@@ -42,12 +42,12 @@ class DataProcessor(object):
             'graph_state_keep_prob' : tf.placeholder(tf.float32, None, name='graph_state_keep_prob'),
             'out_layer_dropout_keep_prob' : tf.placeholder(
                 tf.float32, [], name='out_layer_dropout_keep_prob'),
-            'initial_node_representation' : tf.placeholder(
-                tf.float32, [None, self.layer_params.node_embed_size], name='node_features'),
+            'input_node_embeds' : tf.placeholder(
+                tf.float32, [None, self.layer_params.node_embed_size], name='node_embeds'),
+            'node_labels' : tf.placeholder(
+                tf.float32, [None], name='node_labels'),
             'adjacency_lists' : [tf.placeholder(
                 tf.int32, [None, 2], name='adjacency_e%s' % e) for e in range(self.num_edge_labels)],
-            'num_incoming_edges_per_label' : tf.placeholder(
-                tf.float32, [None, self.num_edge_labels], name='num_incoming_edges_per_type'),
             'edge_weight_dropout_keep_prob' : tf.placeholder(
                 tf.float32, None, name='edge_weight_dropout_keep_prob')
         }
@@ -182,14 +182,13 @@ class DataProcessor(object):
                 node_offset += num_nodes_in_graph
 
             batch_feed_dict = {
-                self.placeholders['initial_node_representation']: np.array(batch_node_features),
-                self.placeholders['num_incoming_edges_per_type']: np.concatenate(batch_num_incoming_edges_per_type,
-                                                                                 axis=0),
-                self.placeholders['graph_nodes_list']: np.concatenate(batch_graph_nodes_list),
-                self.placeholders['target_values']: batch_target_task_values,
-                self.placeholders['num_graphs']: num_graphs_in_batch,
-                self.placeholders['graph_state_keep_prob']: state_dropout_keep_prob,
-                self.placeholders['edge_weight_dropout_keep_prob']: edge_weights_dropout_keep_prob
+                self.placeholders['input_node_embeds'] : np.array(batch_node_features),
+                self.placeholders['node_labels'] : np.argmax(np.array(batch_node_features), axis=1)
+                self.placeholders['graph_nodes_list'] : np.concatenate(batch_graph_nodes_list),
+                self.placeholders['target_values'] : batch_target_task_values,
+                self.placeholders['num_graphs'] : num_graphs_in_batch,
+                self.placeholders['graph_state_keep_prob'] : state_dropout_keep_prob,
+                self.placeholders['edge_weight_dropout_keep_prob'] : edge_weights_dropout_keep_prob
             }
             # Merge adjacency lists and information about incoming nodes:
             for i in range(self.num_edge_labels):
