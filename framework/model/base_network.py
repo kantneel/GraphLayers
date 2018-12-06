@@ -6,59 +6,148 @@ import os
 import random
 import numpy as np
 import tensorflow as tf
+from framework.utils.data_processing import DataProcessor
 from framework.utils.io import IndexedFileReader, IndexedFileWriter, ThreadedIterator
+from framework.utils.paramspaces import GraphNetworkPlaceholders
 
 class GraphNetwork(object):
-    def __init__(self, network_params, exp_params, placeholders):
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        self.graph = tf.Graph()
-        self.sess = tf.Session(graph=self.graph, config=config)
-        with self.graph.as_default():
-            self.network_params = network_params
-            self.exp_params = exp_params
-            self.placeholders = placeholders
-            self.layers = []
-            self.ops = {}
+    def __init__(self, network_params, layer_params, exp_params, placeholders, name='graph_network'):
+        self.name = name
+        self.network_params = network_params
+        self.layer_params = layer_params
+        self.exp_params = exp_params
+        self.layers = []
+        self.ops = {}
+
+    def create_embeddings(self):
+        initializer = tf.contrib.layers.xavier_initializer()
+        self.node_embeddings = tf.Variable(
+            initializer([self.network_params.num_nodes, self.layer_params.node_embed_size]),
+            name='node_embeddings')
+        self.node_label_embeddings = tf.Variable(
+            initializer([self.network_params.num_node_labels, self.layer_params.node_label_embed_size]),
+            name='node_label_embeddings')
+        self.edge_label_embeddings = tf.Variable(
+            initializer([self.network_params.num_edge_labels, self.layer_params.edge_label_embed_size]),
+            name='edge_label_embeddings')
 
     def add_layer(self, new_layer):
         self.layers.append(new_layer)
         # check that layer properties are compatible
 
-    def make_model(self, placeholders):
-        outputs = [placeholders]
-        for layer in self.layers:
-            outputs.append(layer(outputs[-1]))
-        results = outputs[-1]
+    def get_messages(self, current_node_embeds):
+        """
+        Retuns a list of list of tensors
+        Each list is for a node which which has neighbors described by node_embed, node_label_embed, edge_label_embed
+        Overall shape: [num_nodes, max_degree or num_nodes, node_embed_size + node_label_embed_size + edge_label_embed_size]
+        """
 
-        logits = results.input_node_embeds
-        labels = placeholders.targets
+        message_sources = []  # list of tensors of message sources of shape [E]
+        message_targets = []  # list of tensors of message targets of shape [E]
+        message_edge_labels = []  # list of tensors of edge type of shape [E]
+
+        messages_for_nodes = [[] * self.network_params.num_nodes]
+        for edge_label_idx, adj_list_for_edge_label in enumerate(self.placeholders.adjacency_lists):
+            edge_sources = adj_list_for_edge_label[:, 0]
+            edge_targets = adj_list_for_edge_label[:, 1]
+            message_sources.append(edge_sources)
+            message_targets.append(edge_targets)
+            message_edge_labels.append(tf.ones_like(edge_targets, dtype=tf.int32) * edge_label_idx)
+
+        message_sources = tf.concat(message_sources, axis=0)  # Shape [M]
+        source_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=message_sources)
+        source_node_labels = tf.gather(params=self.placeholders.node_labels, indices=message_sources)
+        source_node_label_embeds = tf.nn.embedding_lookup(self.node_label_embeddings, ids=source_node_labels)
+
+        message_targets = tf.concat(message_targets, axis=0)  # Shape [M]
+        target_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=message_targets)
+        target_node_labels = tf.gather(params=self.placeholders.node_labels, indices=message_targets)
+        target_node_label_embeds = tf.nn.embedding_lookup(self.node_label_embeddings, ids=target_node_labels)
+
+        message_edge_labels = tf.concat(message_edge_labels, axis=0)  # Shape [M]
+        edge_label_embeds = tf.nn.embedding_lookup(self.edge_label_embeddings, ids=message_edge_labels)
+
+        # This is the input to the layer. I think it also makes sense to
+        # include the target node embed and target node label embed
+        # since that could be used for recurrent layers, but this does not currently do so.
+        concat_embeds = tf.concat([source_node_embeds, source_node_label_embeds, edge_label_embeds], axis=1)
+
+        # need to unpack in order to get length of python list and iterate.
+        for i in range(len(tf.unstack(concat_embeds, 0))):
+            messages_for_nodes[message_targets[i]].append(concat_embeds(i))
+
+        messages_for_nodes = [m if len(m) > 0 else None for m in messages_for_nodes]
+        #return messages_for_nodes
+        return (concat_embeds, message_targets)
+
+    def make_model(self):
+        """Create the tensorflow graph that encodes the network"""
+        self.placeholders = self.define_placeholders()
+
+        current_node_embeds = self.node_embeddings
+        for layer in self.layers:
+            #messages_for_nodes = self.get_messages(current_node_embeds)
+            #output_embeds = []
+            #for message_list in messages_for_nodes:
+            #    # computing new node embedding based off of incoming messages
+            #    output_embeds.append(layer(message_list))
+            ## updated embeddings for all nodes
+            #current_node_embeds = tf.stack(output_embeds)
+            layer.create_weights()
+            concat_embeds, message_targets = self.get_messages(current_node_embeds)
+            current_node_embeds = layer(concat_embeds, message_targets)
+
+        logits = tf.unsorted_segment_sum(
+            data=current_node_embeds,
+            segment_ids=self.placeholders.graph_nodes_list,
+            num_segments=self.placeholders.num_graphs)
+        labels = self.placeholders.targets
         loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                               labels=labels)
 
         self.ops['loss'] = tf.reduce_mean(loss)
         probabilities = tf.nn.softmax(logits)
 
-        correct_prediction = tf.equal(tf.argmax(probabilities, -1), placeholders.targets)
+        correct_prediction = tf.equal(tf.argmax(probabilities, -1), self.placeholders.targets)
         self.ops['accuracy_task'] = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
 
         top_k = tf.nn.top_k(probabilities, self.exp_params.top_k)
         self.ops['preds'] = top_k.indices
         self.ops['probs'] = top_k.values
 
+    def define_placeholders(self):
+        placeholders = GraphNetworkPlaceholders(
+            input_node_embeds=tf.placeholder(
+                tf.float32, [None, self.layer_params.node_embed_size], name='input_node_embeds'),
+            node_labels=tf.placeholder(
+                tf.int32, [None], name='node_labels'),
+            adjacency_lists=tuple([tf.placeholder(
+                tf.int32, [None, 2], name='adjacency_e%s' % e) for e in range(self.network_params.num_edge_labels)]),
+            num_graphs=tf.placeholder(tf.int32, [], name='num_graphs'),
+            graph_nodes_list=tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
+            targets=tf.placeholder(tf.int64, [None], name='targets')
+        )
+        return placeholders
+
     def build_graph_model(self, mode='training', restore_file=None):
         possible_modes = ['training', 'testing', 'inference']
         if mode not in possible_modes:
             raise NotImplementedError("Mode has to be one of {}".format(", ".join(possible_modes)))
 
-        self.make_model(self.placeholders)
-        if mode == 'training':
-            self.make_train_step()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.graph = tf.Graph()
+        self.sess = tf.Session(graph=self.graph, config=config)
+        with self.graph.as_default():
+            self.create_embeddings()
+            self.make_model()
+            if mode == 'training':
+                self.make_train_step()
 
-        if restore_file is None:
-            self.initialize_model()
-        else:
-            self.restore_model(restore_file)
+            if restore_file is None:
+                self.initialize_model()
+            else:
+                self.restore_model(restore_file)
 
     def initialize_model(self):
         init_op = tf.group(tf.global_variables_initializer(),
@@ -110,7 +199,6 @@ class GraphNetwork(object):
 
     def make_train_step(self):
         trainable_vars = self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-        print(trainable_vars)
         #if self.params.args.freeze_graph_model:
         if False:
             graph_vars = set(self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="graph_model"))
@@ -195,10 +283,18 @@ class GraphNetwork(object):
         start_time = time.time()
         processed_graphs = 0
         batch_iterator = ThreadedIterator(data_processor.make_minibatch_iterator(), max_queue_size=50)
-        for step, batch_data in enumerate(batch_iterator):
+        for step, batch_data_dict in enumerate(batch_iterator):
+            batch_data = {
+                self.placeholders.input_node_embeds : batch_data_dict['input_node_embeds'],
+                self.placeholders.node_labels : batch_data_dict['node_labels'],
+                self.placeholders.graph_nodes_list : batch_data_dict['graph_nodes_list'],
+                self.placeholders.targets : batch_data_dict['targets'],
+                self.placeholders.num_graphs : batch_data_dict['num_graphs'],
+                self.placeholders.adjacency_lists : batch_data_dict['adjacency_lists']
+            }
             num_graphs = batch_data[self.placeholders.num_graphs]
             processed_graphs += num_graphs
-            if is_training:
+            if data_processor.is_training_data:
                 #batch_data[self.placeholders['out_layer_dropout_keep_prob']] = self.params[
                 #    'out_layer_dropout_keep_prob']
                 fetch_list = [self.ops['loss'], accuracy_op, self.ops['train_step']]
@@ -256,11 +352,11 @@ class GraphNetwork(object):
         self.build_graph_model(mode='training', restore_file=None)
 
         #  Load up the data
-        self.train_data_processor = DataProcessor(self.exp_params.train, self.network_params,
+        self.train_data_processor = DataProcessor(self.exp_params.train, self.network_params.num_nodes,
                                         self.layers[0].layer_params, is_training_data=True)
 
-        self.valid_data_processor = DataProcessor(self.exp_params.valid, self.network_params,
-                                        self.layer[0].layer_params, is_training_data=False)
+        self.valid_data_processor = DataProcessor(self.exp_params.valid, self.network_params.num_nodes,
+                                        self.layers[0].layer_params, is_training_data=False)
 
         self.train()
 

@@ -3,9 +3,11 @@ from framework.model.layer import GraphLayer
 from examples.gated_gnn import GatedLayer
 from examples.graph_pool import PoolingLayer
 from examples.output_layers import DenseOutputLayer
+from examples.basic_dense import BasicDenseLayer
 from framework.utils.paramspaces import GraphNetworkParams, GraphLayerParams, \
     GraphNetworkPlaceholders, ExperimentParams
 from framework.utils.data_processing import DataProcessor
+import tensorflow as tf
 
 # first preprocess data to get num edge types, num node types, num classes
 train_path = 'depth1_data/d3_100k.data'
@@ -36,19 +38,20 @@ placeholders = GraphNetworkPlaceholders(
     graph_nodes_list=p['graph_nodes_list'],
     targets=p['target_values']
 )
-graph = tf.Graph()
-with graph.as_default():
-    net = GraphNetwork(network_params, experiment_params, placeholders, graph)
-    standard_gated_layer = GatedLayer(layer_params, network_params,
-                                      name='gated_1')
+net = GraphNetwork(network_params, layer_params, experiment_params, placeholders)
+standard_gated_layer = GatedLayer(layer_params, network_params,
+                                  name='gated_1')
 
-    net.add_layer(standard_gated_layer)
-    net.add_layer(standard_gated_layer.clone(name='gated_2'))
-    net.add_layer(PoolingLayer(layer_params, network_params))
-    net.add_layer(DenseOutputLayer(layer_params, network_params,
-                                   [128], data_processor.num_classes))
+#net.add_layer(standard_gated_layer)
+#net.add_layer(standard_gated_layer.clone(name='gated_2'))
+#net.add_layer(PoolingLayer(layer_params, network_params))
+#net.add_layer(DenseOutputLayer(layer_params, network_params,
+#                               [128], data_processor.num_classes))
 
-    net.run()
+net.add_layer(BasicDenseLayer(layer_params, network_params))
+net.add_layer(BasicDenseLayer(layer_params, network_params))
+#net.add_layer(PoolingLayer(layer_params, network_params))
+net.run()
 
 
 
