@@ -67,17 +67,14 @@ class GraphNetwork(object):
         message_edge_labels = tf.concat(message_edge_labels, axis=0)  # Shape [M]
         edge_label_embeds = tf.nn.embedding_lookup(self.edge_label_embeddings, ids=message_edge_labels)
 
-        # This is the input to the layer. I think it also makes sense to
-        # include the target node embed and target node label embed
-        # since that could be used for recurrent layers, but this does not currently do so.
+        # This is the input to the layer. Some notes:
+        # 1. I think it also makes sense to
+        #    include the target node embed and target node label embed
+        #    since that could be used for recurrent layers, but this does not currently do so.
+        # 2. Some layers require embeddings, but other ones require the label index itself.
+        #    An example is when there are separate weights/parameters for every label,
+        #    which is the case for GGNN.
         concat_embeds = tf.concat([source_node_embeds, source_node_label_embeds, edge_label_embeds], axis=1)
-
-        # need to unpack in order to get length of python list and iterate.
-        for i in range(len(tf.unstack(concat_embeds, 0))):
-            messages_for_nodes[message_targets[i]].append(concat_embeds(i))
-
-        messages_for_nodes = [m if len(m) > 0 else None for m in messages_for_nodes]
-        #return messages_for_nodes
         return (concat_embeds, message_targets)
 
     def make_model(self):
@@ -93,10 +90,15 @@ class GraphNetwork(object):
             #    output_embeds.append(layer(message_list))
             ## updated embeddings for all nodes
             #current_node_embeds = tf.stack(output_embeds)
-            layer.create_weights()
-            concat_embeds, message_targets = self.get_messages(current_node_embeds)
-            current_node_embeds = layer(concat_embeds, message_targets)
 
+            layer.create_weights()
+            num_timesteps = getattr(layer, 'num_timesteps', 1)
+            for i in range(num_timesteps):
+                concat_embeds, message_targets = self.get_messages(current_node_embeds)
+                current_node_embeds = layer(concat_embeds, message_targets)
+
+        # Pooling the nodes for each graph. I suppose customizing
+        # this will be a feature of the GraphNetwork class.
         logits = tf.unsorted_segment_sum(
             data=current_node_embeds,
             segment_ids=self.placeholders.graph_nodes_list,
@@ -199,16 +201,15 @@ class GraphNetwork(object):
 
     def make_train_step(self):
         trainable_vars = self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-        #if self.params.args.freeze_graph_model:
-        if False:
-            graph_vars = set(self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="graph_model"))
-            filtered_vars = []
-            for var in trainable_vars:
-                if var not in graph_vars:
-                    filtered_vars.append(var)
-                else:
-                    print("Freezing weights of variable %s." % var.name)
-            trainable_vars = filtered_vars
+        #if False:
+        #    graph_vars = set(self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="graph_model"))
+        #    filtered_vars = []
+        #    for var in trainable_vars:
+        #        if var not in graph_vars:
+        #            filtered_vars.append(var)
+        #        else:
+        #            print("Freezing weights of variable %s." % var.name)
+        #    trainable_vars = filtered_vars
 
         optimizer = tf.train.AdamOptimizer(self.exp_params.lr)
         grads_and_vars = optimizer.compute_gradients(self.ops['loss'], var_list=trainable_vars)
