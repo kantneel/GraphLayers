@@ -192,11 +192,15 @@ class DataProcessor(object):
                 'adjacency_lists' : [None] * self.num_edge_labels
             }
             # Merge adjacency lists and information about incoming nodes:
+            in_degrees = [0 for _ in range(batch_node_features.shape[0])]
             for i in range(self.num_edge_labels):
                 if len(batch_adjacency_lists[i]) > 0:
                     adj_list = np.concatenate(batch_adjacency_lists[i])
                 else:
                     adj_list = np.zeros((0, 2), dtype=np.int32)
                 batch_feed_dict['adjacency_lists'][i] = adj_list
+                for row in adj_list:
+                    in_degrees[row[1]] += 1
 
+            batch_feed_dict['in_degrees'] = np.array(in_degrees)
             yield batch_feed_dict

@@ -46,13 +46,32 @@ class GraphNetwork(object):
         message_targets = []  # list of tensors of message targets of shape [E]
         message_edge_labels = []  # list of tensors of edge type of shape [E]
 
-        messages_for_nodes = [[] * self.network_params.num_nodes]
+        all_messages = []
         for edge_label_idx, adj_list_for_edge_label in enumerate(self.placeholders.adjacency_lists):
-            edge_sources = adj_list_for_edge_label[:, 0]
-            edge_targets = adj_list_for_edge_label[:, 1]
-            message_sources.append(edge_sources)
-            message_targets.append(edge_targets)
-            message_edge_labels.append(tf.ones_like(edge_targets, dtype=tf.int32) * edge_label_idx)
+            messages_of_edge_label = tf.concat([adj_list_for_edge_label,
+                                                self.placeholders.node_labels,
+                                                tf.ones_list(adj_list_for_edge_label[:, 0],
+                                                             dtype=tf.int32) * edge_label_idx], axis=1)
+            all_messages.append(messages_of_edge_label)
+
+        # [m, d]
+        sorted_messages = tf.gather(all_messages, tf.nn.top_k(-all_messages[:, 1],
+                                                              k=tf.shape(all_messages)[0]).indices)
+
+        # all inputs for the layer
+        source_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=sorted_messages[0])
+        target_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=sorted_messages[1])
+        node_label_vecs = tf.one_hot(sorted_messages[2], depth=self.network_params.num_node_labels)
+        edge_label_vecs = tf.one_hot(sorted_messages[3], depth=self.network_params.num_edge_labels)
+
+        sorted_embed_messages = tf.concat([source_node_embeds, node_label_vecs, edge_label_embeds], axis=1)
+        # [n, k, d]
+        message_lists = tf.split(sorted_embed_messages, self.placeholders.in_degrees)
+        max_degree = tf.max(self.placeholders.in_degrees)
+        padded_message_lists = [tf.pad(m, tf.constant([[0, max_degree - tf.shape(m)[0]], [0, 0]])) for m in message_lists]
+        layer_input_messages = tf.stack(padded_message_lists, axis=0)
+
+        ###################################
 
         message_sources = tf.concat(message_sources, axis=0)  # Shape [M]
         source_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=message_sources)
@@ -75,7 +94,8 @@ class GraphNetwork(object):
         #    An example is when there are separate weights/parameters for every label,
         #    which is the case for GGNN.
         concat_embeds = tf.concat([source_node_embeds, source_node_label_embeds, edge_label_embeds], axis=1)
-        return (concat_embeds, message_targets)
+        #return (concat_embeds, message_targets)
+        return layer_input_messages
 
     def make_model(self):
         """Create the tensorflow graph that encodes the network"""
@@ -94,8 +114,8 @@ class GraphNetwork(object):
             layer.create_weights()
             num_timesteps = getattr(layer, 'num_timesteps', 1)
             for i in range(num_timesteps):
-                concat_embeds, message_targets = self.get_messages(current_node_embeds)
-                current_node_embeds = layer(concat_embeds, message_targets)
+                layer_input_messages = self.get_messages(current_node_embeds)
+                current_node_embeds = layer(layer_input_messages))
 
         # Pooling the nodes for each graph. I suppose customizing
         # this will be a feature of the GraphNetwork class.
@@ -127,7 +147,8 @@ class GraphNetwork(object):
                 tf.int32, [None, 2], name='adjacency_e%s' % e) for e in range(self.network_params.num_edge_labels)]),
             num_graphs=tf.placeholder(tf.int32, [], name='num_graphs'),
             graph_nodes_list=tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
-            targets=tf.placeholder(tf.int64, [None], name='targets')
+            targets=tf.placeholder(tf.int64, [None], name='targets'),
+            in_degrees=tf.placeholder(tf.int64, [None], name='in_degrees')
         )
         return placeholders
 
@@ -291,7 +312,8 @@ class GraphNetwork(object):
                 self.placeholders.graph_nodes_list : batch_data_dict['graph_nodes_list'],
                 self.placeholders.targets : batch_data_dict['targets'],
                 self.placeholders.num_graphs : batch_data_dict['num_graphs'],
-                self.placeholders.adjacency_lists : batch_data_dict['adjacency_lists']
+                self.placeholders.adjacency_lists : batch_data_dict['adjacency_lists'],
+                self.placeholders.in_degrees : batch_data_dict['in_degrees']
             }
             num_graphs = batch_data[self.placeholders.num_graphs]
             processed_graphs += num_graphs
