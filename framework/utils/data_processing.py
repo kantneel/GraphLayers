@@ -36,10 +36,11 @@ class DataProcessor(object):
 
     def define_placeholders(self):
         placeholders = {
-            'target_values' : tf.placeholder(tf.int64, [None], name='target_values'),
+            'target_values' : tf.placeholder(tf.int32, [None], name='target_values'),
             'num_graphs' : tf.placeholder(tf.int32, [], name='num_graphs'),
             'graph_nodes_list' : tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
             'graph_state_keep_prob' : tf.placeholder(tf.float32, None, name='graph_state_keep_prob'),
+            'in_degrees' : tf.placeholder(tf.int32, [None], name='in_degrees'),
             'out_layer_dropout_keep_prob' : tf.placeholder(
                 tf.float32, [], name='out_layer_dropout_keep_prob'),
             'input_node_embeds' : tf.placeholder(
@@ -192,7 +193,7 @@ class DataProcessor(object):
                 'adjacency_lists' : [None] * self.num_edge_labels
             }
             # Merge adjacency lists and information about incoming nodes:
-            in_degrees = [0 for _ in range(batch_node_features.shape[0])]
+            in_degrees = [0 for _ in range(len(batch_node_features))]
             for i in range(self.num_edge_labels):
                 if len(batch_adjacency_lists[i]) > 0:
                     adj_list = np.concatenate(batch_adjacency_lists[i])
