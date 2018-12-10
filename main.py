@@ -12,7 +12,7 @@ import tensorflow as tf
 # first preprocess data to get num edge types, num node types, num classes
 train_path = 'depth1_data/d3_100k.data'
 valid_path = train_path
-batch_size = 8192
+batch_size = 30000
 
 layer_params = GraphLayerParams(
     node_embed_size=256,
@@ -36,11 +36,12 @@ placeholders = GraphNetworkPlaceholders(
     adjacency_lists=p['adjacency_lists'],
     num_graphs=p['num_graphs'],
     graph_nodes_list=p['graph_nodes_list'],
+    in_degrees=p['in_degrees'],
     targets=p['target_values']
 )
 net = GraphNetwork(network_params, layer_params, experiment_params, placeholders)
-standard_gated_layer = GatedLayer(layer_params, network_params,
-                                  name='gated_1')
+#standard_gated_layer = GatedLayer(layer_params, network_params,
+#                                  name='gated_1')
 
 #net.add_layer(standard_gated_layer)
 #net.add_layer(standard_gated_layer.clone(name='gated_2'))

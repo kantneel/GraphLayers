@@ -40,7 +40,7 @@ class DataProcessor(object):
             'num_graphs' : tf.placeholder(tf.int32, [], name='num_graphs'),
             'graph_nodes_list' : tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
             'graph_state_keep_prob' : tf.placeholder(tf.float32, None, name='graph_state_keep_prob'),
-            'in_degrees' : tf.placeholder(tf.int32, [None], name='in_degrees'),
+            'in_degrees' : tf.placeholder(tf.int32, [None, 2], name='in_degrees'),
             'out_layer_dropout_keep_prob' : tf.placeholder(
                 tf.float32, [], name='out_layer_dropout_keep_prob'),
             'input_node_embeds' : tf.placeholder(
@@ -203,5 +203,11 @@ class DataProcessor(object):
                 for row in adj_list:
                     in_degrees[row[1]] += 1
 
-            batch_feed_dict['in_degrees'] = np.array(in_degrees)
+            in_degree_indices = np.zeros((sum(in_degrees), 2))
+            message_num = 0
+            for d in in_degrees:
+                in_degree_indices[message_num:message_num + d] = \
+                    np.vstack([np.ones(d, dtype=int) * d, np.arange(d, dtype=int)]).transpose()
+                message_num += d
+            batch_feed_dict['in_degrees'] = in_degree_indices
             yield batch_feed_dict
