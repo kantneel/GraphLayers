@@ -19,23 +19,29 @@ class GraphLayer(ABC):
             clone.name = name
         return clone
 
-    def get_node_embeds(layer_input_embeds):
+    def create_weights(self):
+        pass
+
+    def reset(self):
+        pass
+
+    def get_node_embeds(self, layer_input_embeds):
         # input is [num_nodes, max_degree, vector dim]
-        end = self.layer_params.node_embed_size,
+        end = self.layer_params.node_embed_size
         sl = slice(0, end, 1)
         return layer_input_embeds[:, :, sl]
 
-    def get_node_label_embeds(layer_input_embeds):
+    def get_node_label_embeds(self, layer_input_embeds):
         # input is [num_nodes, max_degree, vector dim]
         start = self.layer_params.node_embed_size
-        end = start + self.layer_params.node_label_embed_size
+        end = start + self.network_params.num_node_labels
         sl = slice(start, end, 1)
         return layer_input_embeds[:, :, sl]
 
-    def get_edge_label_embeds(layer_input_embeds):
+    def get_edge_label_embeds(self, layer_input_embeds):
         # input is [num_nodes, max_degree, vector dim]
-        start = tf.shape(layer_input_embeds)[-1] - \
-            self.layer_params.edge_label_size
+        start = self.layer_params.node_embed_size + \
+            self.network_params.num_node_labels
         sl = slice(start, None, 1)
         return layer_input_embeds[:, :, sl]
 

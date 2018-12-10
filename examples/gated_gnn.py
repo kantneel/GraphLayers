@@ -19,20 +19,15 @@ class GatedLayer(GraphLayer):
         self.edge_dropout_keep_prob = edge_dropout_keep_prob
         self.node_dropout_keep_prob = node_dropout_keep_prob
         self.cell_type = cell_type
-
-        self.create_weights()
-
-    def glorot_init(self, shape):
-        initialization_range = np.sqrt(6.0 / (shape[-2] + shape[-1]))
-        return np.random.uniform(low=-initialization_range, high=initialization_range, size=shape).astype(np.float32)
+        self.rnn_state = None
 
     def create_weights(self):
         net_p = self.network_params
         layer_p = self.layer_params
-
+        initializer = tf.contrib.layers.xavier_initializer()
         with tf.variable_scope(self.name):
             edge_weights = tf.Variable(
-                self.glorot_init([
+                initializer([
                     net_p.num_edge_labels * layer_p.node_embed_size,
                     layer_p.node_embed_size]),
                 name='{0}_edge_weights'.format(self.name))
@@ -56,70 +51,32 @@ class GatedLayer(GraphLayer):
             self.rnn_cell = tf.nn.rnn_cell.DropoutWrapper(
                 cell, state_keep_prob=self.node_dropout_keep_prob)
 
+            inp_size = self.layer_params.node_embed_size + \
+                self.layer_params.node_label_embed_size + \
+                self.layer_params.edge_label_embed_size
+
+            self.dense_layer = tf.layers.Dense(
+                units=self.layer_params.node_embed_size,
+                activation=self.activation,
+                name='inp_proj_layer')
             # create weights for attention @sparse:302
 
-    def __call__(self, placeholders):
-        # Used shape abbreviations:
-        #   V ~ number of nodes
-        #   D ~ state dimension
-        #   E ~ number of edges of current type
-        #   M ~ number of messages (sum of all E)
+    def __call__(self, layer_input_embeds, target_embeds):
+        # input: [n, k, d1+d2+d3], [n, d1]
 
-        node_embeds = [placeholders.input_node_embeds] # shape: [V, D]
-        num_nodes = tf.shape(placeholders.input_node_embeds)[0]
+        # [n, k, d1]
+        node_embeds = self.get_node_embeds(layer_input_embeds)
+        # [n, k]
+        edge_labels = tf.argmax(self.get_edge_label_embeds(layer_input_embeds), axis=2)
+        # [n, k, d1, d1]
+        edge_label_weights = tf.nn.embedding_lookup(params=self.edge_weights,
+                                                    ids=edge_labels)
+        # [n, k, d1]
+        transformed_node_embeds = tf.squeeze(tf.matmul(edge_label_weights,
+                                            tf.expand_dims(node_embeds, 3)), 3)
+        # [n, d1]
+        incoming_messages = tf.reduce_mean(transformed_node_embeds, axis=1)
+        # [n, d1]
+        output_embeds = self.rnn_cell(incoming_messages, target_embeds)[1]
+        return output_embeds
 
-        message_sources = []  # list of tensors of message sources of shape [E]
-        message_targets = []  # list of tensors of message targets of shape [E]
-        message_edge_labels = []  # list of tensors of edge type of shape [E]
-        for edge_label_idx, adj_list_for_edge_label in enumerate(placeholders.adjacency_lists):
-            edge_sources = adj_list_for_edge_label[:, 0]
-            edge_targets = adj_list_for_edge_label[:, 1]
-            message_sources.append(edge_sources)
-            message_targets.append(edge_targets)
-            message_edge_labels.append(tf.ones_like(edge_targets, dtype=tf.int32) * edge_label_idx)
-        message_sources = tf.concat(message_sources, axis=0)  # Shape [M]
-        message_targets = tf.concat(message_targets, axis=0)  # Shape [M]
-        message_edge_labels = tf.concat(message_edge_labels, axis=0)  # Shape [M]
-
-        with tf.variable_scope(self.name):
-            # TODO: something with residuals, but I don't think we use them anyway
-            # TODO: get tensor for the attention for different edge labels
-
-            timestep_node_embeds = [placeholders.input_node_embeds]
-            for step in range(self.num_timesteps):
-                with tf.variable_scope('timestep_{0}'.format(step)):
-                    messages = []  # list of tensors of messages of shape [E, D]
-                    message_source_states = []  # list of tensors of edge source states of shape [E, D]
-
-                    for edge_label_idx, adj_list_for_edge_label in enumerate(placeholders.adjacency_lists):
-                        edge_sources = adj_list_for_edge_label[:, 0]
-                        edge_source_states = tf.nn.embedding_lookup(params=timestep_node_embeds[-1],
-                                                                    ids=edge_sources)
-                        all_messages_for_edge_label = tf.matmul(edge_source_states,
-                                                               self.edge_weights[edge_label_idx])  # Shape [E, D]
-                        messages.append(all_messages_for_edge_label)
-                        message_source_states.append(edge_source_states)
-
-                    messages = tf.concat(messages, axis=0)  # Shape [M, D]
-
-                    # TODO: do attention on the messages which are being sent to each node
-
-                    incoming_messages = tf.unsorted_segment_sum(data=messages,
-                                                                segment_ids=message_targets,
-                                                                num_segments=tf.shape(timestep_node_embeds)[0])
-
-                    #incoming_messages += tf.matmul(placeholders.num_incoming_edges_per_label,
-                    #                               self.edge_biases[edge_label_idx])
-
-                    num_incoming_edges = tf.reduce_sum(placeholders.num_incoming_edges_per_label,
-                                                       keep_dims=True, axis=-1)  # Shape [V, 1]
-                    incoming_messages /= num_incoming_edges + tf.keras.backend.epsilon()
-
-                    #incoming_information = tf.concat(layer_residual_states + [incoming_messages],
-                    #                                 axis=-1) # Shape [V, D]
-
-                    timestep_node_embeds.append(self.rnn_cell(incoming_messages,
-                                                              timestep_node_embeds[-1])[1]) # Shape [V, D]
-
-        placeholders.input_node_embeds = timestep_node_embeds[-1]
-        return placeholders

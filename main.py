@@ -15,7 +15,7 @@ valid_path = train_path
 batch_size = 30000
 
 layer_params = GraphLayerParams(
-    node_embed_size=256,
+    node_embed_size=64,
     node_label_embed_size=64,
     edge_label_embed_size=64)
 
@@ -49,8 +49,8 @@ net = GraphNetwork(network_params, layer_params, experiment_params, placeholders
 #net.add_layer(DenseOutputLayer(layer_params, network_params,
 #                               [128], data_processor.num_classes))
 
-net.add_layer(BasicDenseLayer(layer_params, network_params))
-net.add_layer(BasicDenseLayer(layer_params, network_params))
+net.add_layer(GatedLayer(layer_params, network_params))
+net.add_layer(GatedLayer(layer_params, network_params))
 #net.add_layer(PoolingLayer(layer_params, network_params))
 net.run()
 

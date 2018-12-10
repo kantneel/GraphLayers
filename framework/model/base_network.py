@@ -66,12 +66,9 @@ class GraphNetwork(object):
         # all inputs for the layer
         # [m, d2]
         node_label_embeds = tf.one_hot(sorted_messages[:, 2], depth=self.network_params.num_node_labels)
-        if current_node_embeds is None:
-            current_node_embeds = tf.one_hot(sorted_messages[:, 2], depth=self.layer_params.node_embed_size)
         # [m, d1]
-
         source_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=sorted_messages[:, 0])
-        target_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=sorted_messages[:, 1])
+        #target_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=sorted_messages[:, 1])
         # [m, d3]
         edge_label_embeds = tf.one_hot(sorted_messages[:, 3], depth=self.network_params.num_edge_labels)
 
@@ -136,7 +133,8 @@ class GraphNetwork(object):
         """Create the tensorflow graph that encodes the network"""
         self.placeholders = self.define_placeholders()
 
-        current_node_embeds = None
+        current_node_embeds = tf.one_hot(self.placeholders.node_labels,
+                                         depth=self.layer_params.node_embed_size)
         for layer in self.layers:
             #messages_for_nodes = self.get_messages(current_node_embeds)
             #output_embeds = []
@@ -150,8 +148,10 @@ class GraphNetwork(object):
             num_timesteps = getattr(layer, 'num_timesteps', 1)
             for i in range(num_timesteps):
                 layer_input_messages = self.get_messages(current_node_embeds)
-                current_node_embeds = layer(layer_input_messages)
+                current_node_embeds = layer(layer_input_messages, current_node_embeds)
 
+        current_node_embeds = tf.layers.dense(current_node_embeds,
+                                              self.train_data_processor.num_classes)
         # Pooling the nodes for each graph. I suppose customizing
         # this will be a feature of the GraphNetwork class.
         logits = tf.unsorted_segment_sum(
@@ -408,15 +408,14 @@ class GraphNetwork(object):
         random.seed(self.exp_params.rng)
         np.random.seed(self.exp_params.rng)
 
-        #  Setup the model
-        self.build_graph_model(mode='training', restore_file=None)
 
         #  Load up the data
         self.train_data_processor = DataProcessor(self.exp_params.train, self.network_params.num_nodes,
                                         self.layers[0].layer_params, is_training_data=True)
-
         self.valid_data_processor = DataProcessor(self.exp_params.valid, self.network_params.num_nodes,
                                         self.layers[0].layer_params, is_training_data=False)
+        #  Setup the model
+        self.build_graph_model(mode='training', restore_file=None)
 
         self.train()
 
