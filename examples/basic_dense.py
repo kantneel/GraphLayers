@@ -16,20 +16,14 @@ class BasicDenseLayer(GraphLayer):
             self.activation = eval('tf.nn.{0}'.format(activation))
 
     def create_weights(self):
-        inp_size = self.layer_params.node_embed_size + \
-            self.layer_params.node_label_embed_size + \
-            self.layer_params.edge_label_embed_size
         with tf.variable_scope(self.name):
             self.dense_layer = tf.layers.Dense(
                 units=self.layer_params.node_embed_size,
                 activation=self.activation,
                 name='layer')
 
-    def __call__(self, concat_embeds, message_targets):
-        transformed_messages = self.dense_layer(concat_embeds)
-        new_node_embeds = tf.unsorted_segment_sum(
-            data=transformed_messages,
-            segment_ids=message_targets,
-            num_segments=tf.reduce_max(message_targets) + 1)
+    def __call__(self, layer_input_embeds):
+        summed_messages = tf.reduce_sum(layer_input_embeds, axis=1)
+        transformed_messages = self.dense_layer(summed_messages)
 
-        return new_node_embeds
+        return transformed_messages
