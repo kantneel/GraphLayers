@@ -41,6 +41,7 @@ class DataProcessor(object):
             'graph_nodes_list' : tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
             'graph_state_keep_prob' : tf.placeholder(tf.float32, None, name='graph_state_keep_prob'),
             'in_degrees' : tf.placeholder(tf.int32, [None, 2], name='in_degrees'),
+            'sorted_messages' : tf.placeholder(tf.int32, [None, 4], name='sorted_messages'),
             'out_layer_dropout_keep_prob' : tf.placeholder(
                 tf.float32, [], name='out_layer_dropout_keep_prob'),
             'input_node_embeds' : tf.placeholder(
@@ -142,8 +143,6 @@ class DataProcessor(object):
                 np.random.shuffle(dataset)
 
         # Pack until we cannot fit more graphs in the batch
-        #state_dropout_keep_prob = self.params['graph_state_dropout_keep_prob'] if is_training else 1.
-        #edge_weights_dropout_keep_prob = self.params['edge_weight_dropout_keep_prob'] if is_training else 1.
         state_dropout_keep_prob = edge_weights_dropout_keep_prob = 1
         num_graphs = 0
 
@@ -182,32 +181,48 @@ class DataProcessor(object):
                 num_graphs_in_batch += 1
                 node_offset += num_nodes_in_graph
 
+            node_labels = np.argmax(np.array(batch_node_features), axis=1)
+
             batch_feed_dict = {
                 'input_node_embeds' : np.array(batch_node_features),
-                'node_labels' : np.argmax(np.array(batch_node_features), axis=1),
+                'node_labels' : node_labels,
                 'graph_nodes_list' : np.concatenate(batch_graph_nodes_list),
                 'targets' : batch_target_task_values,
                 'num_graphs' : num_graphs_in_batch,
                 'graph_state_keep_prob' : state_dropout_keep_prob,
                 'edge_weight_dropout_keep_prob' : edge_weights_dropout_keep_prob,
-                'adjacency_lists' : [None] * self.num_edge_labels
+                'adjacency_lists' : None,
+                'in_degrees' : None,
+                'sorted_messages' : None
             }
             # Merge adjacency lists and information about incoming nodes:
             in_degrees = [0 for _ in range(len(batch_node_features))]
+            all_messages = []
             for i in range(self.num_edge_labels):
                 if len(batch_adjacency_lists[i]) > 0:
                     adj_list = np.concatenate(batch_adjacency_lists[i])
                 else:
                     adj_list = np.zeros((0, 2), dtype=np.int32)
+                edge_sources = adj_list[:, 0]
+                message_node_labels = np.expand_dims(node_labels[edge_sources], 1)
+                message_edge_labels = np.expand_dims(np.ones_like(edge_sources, dtype=np.int32) * i, 1)
+                messages_of_edge_label = np.concatenate([adj_list, # 0 - source, 1 - target
+                                                         message_node_labels, # 2 - source node label
+                                                         message_edge_labels], 1) # 3 - edge label
+                all_messages.append(messages_of_edge_label)
+
                 batch_feed_dict['adjacency_lists'][i] = adj_list
                 for row in adj_list:
                     in_degrees[row[1]] += 1
 
-            in_degree_indices = np.zeros((sum(in_degrees), 2))
+            concat_messages = np.concatenate(all_messages, 0)
+            sorted_messages = concat_messages[np.argsort(-concat_messages[:, 1])]
+            batch_feed_dict['sorted_messages'] = sorted_messages
+
             message_num = 0
-            for d in in_degrees:
-                in_degree_indices[message_num:message_num + d] = \
-                    np.vstack([np.ones(d, dtype=int) * d, np.arange(d, dtype=int)]).transpose()
+            for i, d in enumerate(in_degrees):
+                in_degree_indices[message_num : message_num + d] = \
+                    np.vstack([np.ones(d, dtype=int) * i, np.arange(d, dtype=int)]).transpose()
                 message_num += d
             batch_feed_dict['in_degrees'] = in_degree_indices
             yield batch_feed_dict

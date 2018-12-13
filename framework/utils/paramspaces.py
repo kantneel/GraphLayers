@@ -60,13 +60,15 @@ class ExperimentParams(object):
 
 class GraphNetworkPlaceholders(object):
     def __init__(self, input_node_embeds, num_graphs, adjacency_lists,
-                 in_degrees, node_labels, graph_nodes_list, targets):
+                 in_degrees, node_labels, graph_nodes_list, targets,
+                 sorted_messages):
 
         # to be used at every typical layer
         self.input_node_embeds = input_node_embeds
         self.node_labels = node_labels
         self.adjacency_lists = adjacency_lists
-        self.in_degrees = in_degrees
+        self.in_degrees = in_degrees,
+        self.sorted_messages = sorted_messages
 
         # to be used by only some layers or the output
         self.num_graphs = num_graphs
@@ -75,4 +77,23 @@ class GraphNetworkPlaceholders(object):
 
     def check_valid_args(self, args):
         pass
+
+class InputConfig(object):
+    def __init__(source_only=True,
+                 source_node_labels=False,
+                 edge_labels=False):
+        self.source_only = source_only
+        self.source_node_labels = source_node_labels
+        self.edge_labels = edge_labels
+
+    def set_config(source_only, source_node_labels, edge_labels):
+        assert True
+        self.source_only = source_only
+        self.source_node_labels = source_node_labels,
+        self.edge_labels = edge_labels
+
+    @classmethod
+    def default(cls):
+        return cls()
+
 

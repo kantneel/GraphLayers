@@ -35,120 +35,73 @@ class GraphNetwork(object):
         self.layers.append(new_layer)
         # check that layer properties are compatible
 
-    def get_messages(self, current_node_embeds=None):
+    def get_messages(self, layer):
         """
-        Retuns a list of list of tensors
-        Each list is for a node which which has neighbors described by node_embed, node_label_embed, edge_label_embed
-        Overall shape: [num_nodes, max_degree or num_nodes, node_embed_size + node_label_embed_size + edge_label_embed_size]
+        Takes in a layer and returns the types of messages that the layer
+        needs for input based on the layer's InputConfig
         """
 
-        message_sources = []  # list of tensors of message sources of shape [E]
-        message_targets = []  # list of tensors of message targets of shape [E]
-        message_edge_labels = []  # list of tensors of edge type of shape [E]
-
-        all_messages = []
-        for edge_label_idx, adj_list_for_edge_label in enumerate(self.placeholders.adjacency_lists):
-            edge_sources = adj_list_for_edge_label[:, 0]
-            message_node_labels = tf.expand_dims(tf.gather(self.placeholders.node_labels, edge_sources), 1)
-            message_edge_labels = tf.expand_dims(tf.ones_like(edge_sources, dtype=tf.int32) * edge_label_idx, 1)
-
-            # [e, 4] (all messages of one particular edge type
-            messages_of_edge_label = tf.concat([adj_list_for_edge_label, # 0 - source, 1 - target
-                                                message_node_labels, # 2 - source node label
-                                                message_edge_labels], axis=1) # 3 - edge label
-            all_messages.append(messages_of_edge_label)
-
-        # [m, 4]
-        concat_messages = tf.concat(all_messages, axis=0)
-        sorted_messages = tf.gather(concat_messages, tf.nn.top_k(-concat_messages[:, 1],
-                                                                 k=tf.shape(concat_messages)[0]).indices)
-
-        # all inputs for the layer
-        # [m, d2]
-        node_label_embeds = tf.one_hot(sorted_messages[:, 2], depth=self.network_params.num_node_labels)
-        # [m, d1]
-        source_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=sorted_messages[:, 0])
-        #target_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=sorted_messages[:, 1])
-        # [m, d3]
-        edge_label_embeds = tf.one_hot(sorted_messages[:, 3], depth=self.network_params.num_edge_labels)
-
-        # [m, d1+d2+d3]
-        sorted_embed_messages = tf.concat([source_node_embeds, node_label_embeds, edge_label_embeds], axis=-1)
-
-        # [n, k, d]
+        sorted_messages = self.placeholders.sorted_messages
+        # Indices [0, 2, 3] selected because of assigned values at line 56
+        sorted_embed_messages = sorted_messages[:, [0, 2, 3]]
         max_degree = tf.reduce_max(self.placeholders.in_degrees)
-        layer_input_messages = tf.scatter_nd(indices=self.placeholders.in_degrees,
-                                             updates=sorted_embed_messages,
-                                             shape=[tf.reduce_max(sorted_messages[:, 1]) + 1, max_degree,
-                                                    self.layer_params.node_embed_size + \
-                                                    self.network_params.num_node_labels + \
-                                                    self.network_params.num_edge_labels])
-        ##################################
 
-        #blank_pad = tf.zeros((self.network_params.num_nodes), dtype=tf.int32)
-        #split_pad = tf.zeros((self.network_params.num_nodes - tf.shape(self.placeholders.in_degrees)[0]), dtype=tf.int32)
+        # scatter options
+        case = 0
+        argv = []
+        config = layer.get_input_config()
+        if config.source_only:
+            # just split by source node
+            # shape: [n, k, 3]
+            messages_by_source_only = tf.scatter_nd(
+                indices=self.placeholders.in_degrees,
+                updates=sorted_embed_messages,
+                shape=[tf.size(self.placeholders.node_labels), max_degree, 3])
+            argv.append(messages_by_source_only)
 
-        #split_vec = blank_pad + tf.concat([self.placeholders.in_degrees, split_pad], axis=0)
-        #print("done creating padded split")
-        #message_lists = tf.split(sorted_embed_messages, split_vec)
-        #print("done splitting messages")
+        if config.source_label:
+            # also split by source node label
+            # shape: [num_node_labels, n, k, 3]
+            source_node_labels = tf.expand_dims(sorted_messages[:, 2], axis=1)
+            split_by_label_indices = tf.concat(
+                [source_node_labels, self.placeholders.in_degrees], axis=1)
 
-        #max_degree = tf.reduce_max(self.placeholders.in_degrees)
-        #padded_message_lists = []
-        #for i, m in enumerate(message_lists):
-        #    padded_message_lists.append(tf.pad(m, [[0, max_degree - tf.shape(m)[0]], [0, 0]]))
-        #    if i % 100 == 0:
-        #        print(i)
-        ##padded_message_lists = [tf.pad(m, [[0, max_degree - tf.shape(m)[0]], [0, 0]]) for m in message_lists]
-        #print("done creating padded message lists")
-        #layer_input_messages = tf.stack(padded_message_lists, axis=0)[:tf.shape(self.placeholders.in_degrees)[0]]
+            messages_by_source_label = tf.scatter_nd(
+                indices=split_by_label_indices,
+                updates=sorted_embed_messages,
+                shape=[self.network_params.num_node_labels,
+                       tf.size(self.placeholders.node_labels), max_degree, 3])
+            argv.append(messages_by_source_label)
 
-        ###################################
+        if config.edge_label:
+            # also split by edge label
+            # shape: [num_edge_labels, n, k, 3]
+            edge_labels = tf.expand_dims(sorted_messages[:, 3], axis=1)
+            split_by_label_indices = tf.concat(
+                [edge_labels, self.placeholders.in_degrees], axis=1)
 
-        #message_sources = tf.concat(message_sources, axis=0)  # Shape [M]
-        #source_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=message_sources)
-        #source_node_labels = tf.gather(params=self.placeholders.node_labels, indices=message_sources)
-        #source_node_label_embeds = tf.nn.embedding_lookup(self.node_label_embeddings, ids=source_node_labels)
+            messages_by_edge_label = tf.scatter_nd(
+                indices=split_by_label_indices,
+                updates=sorted_embed_messages,
+                shape=[self.network_params.num_edge_labels,
+                       tf.size(self.placeholders.node_labels), max_degree, 3])
 
-        #message_targets = tf.concat(message_targets, axis=0)  # Shape [M]
-        #target_node_embeds = tf.nn.embedding_lookup(current_node_embeds, ids=message_targets)
-        #target_node_labels = tf.gather(params=self.placeholders.node_labels, indices=message_targets)
-        #target_node_label_embeds = tf.nn.embedding_lookup(self.node_label_embeddings, ids=target_node_labels)
+            argv.append(messages_by_edge_label)
 
-        #message_edge_labels = tf.concat(message_edge_labels, axis=0)  # Shape [M]
-        #edge_label_embeds = tf.nn.embedding_lookup(self.edge_label_embeddings, ids=message_edge_labels)
-
-        # This is the input to the layer. Some notes:
-        # 1. I think it also makes sense to
-        #    include the target node embed and target node label embed
-        #    since that could be used for recurrent layers, but this does not currently do so.
-        # 2. Some layers require embeddings, but other ones require the label index itself.
-        #    An example is when there are separate weights/parameters for every label,
-        #    which is the case for GGNN.
-        #concat_embeds = tf.concat([source_node_embeds, source_node_label_embeds, edge_label_embeds], axis=1)
-        #return (concat_embeds, message_targets)
-        return layer_input_messages
+        return argv
 
     def make_model(self):
         """Create the tensorflow graph that encodes the network"""
         self.placeholders = self.define_placeholders()
-
         current_node_embeds = tf.one_hot(self.placeholders.node_labels,
                                          depth=self.layer_params.node_embed_size)
         for layer in self.layers:
-            #messages_for_nodes = self.get_messages(current_node_embeds)
-            #output_embeds = []
-            #for message_list in messages_for_nodes:
-            #    # computing new node embedding based off of incoming messages
-            #    output_embeds.append(layer(message_list))
-            ## updated embeddings for all nodes
-            #current_node_embeds = tf.stack(output_embeds)
-
             layer.create_weights()
             num_timesteps = getattr(layer, 'num_timesteps', 1)
             for i in range(num_timesteps):
-                layer_input_messages = self.get_messages(current_node_embeds)
-                current_node_embeds = layer(layer_input_messages, current_node_embeds)
+                layer_input_args = self.get_messages(layer)
+                layer_input_args.append(current_node_embeds)
+                current_node_embeds = layer(*layer_input_args)
 
         current_node_embeds = tf.layers.dense(current_node_embeds,
                                               self.train_data_processor.num_classes)
@@ -183,7 +136,8 @@ class GraphNetwork(object):
             num_graphs=tf.placeholder(tf.int32, [], name='num_graphs'),
             graph_nodes_list=tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
             targets=tf.placeholder(tf.int32, [None], name='targets'),
-            in_degrees=tf.placeholder(tf.int32, [None, 2], name='in_degrees')
+            in_degrees=tf.placeholder(tf.int32, [None, 2], name='in_degrees'),
+            sorted_messages=tf.placeholder(tf.int32, [None, 4], name='sorted_messages')
         )
         return placeholders
 
@@ -350,7 +304,8 @@ class GraphNetwork(object):
                 self.placeholders.targets : batch_data_dict['targets'],
                 self.placeholders.num_graphs : batch_data_dict['num_graphs'],
                 self.placeholders.adjacency_lists : batch_data_dict['adjacency_lists'],
-                self.placeholders.in_degrees : batch_data_dict['in_degrees']
+                self.placeholders.in_degrees : batch_data_dict['in_degrees'],
+                self.placeholders.sorted_messages : batch_data_dict['sorted_messages']
             }
             num_graphs = batch_data[self.placeholders.num_graphs]
             processed_graphs += num_graphs
