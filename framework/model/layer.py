@@ -25,7 +25,7 @@ class GraphLayer(ABC):
 
     def get_node_ids(self, layer_inputs):
         if tf.rank(layer_inputs) is 3:
-            return layer_inputs[:, : 0]
+            return layer_inputs[:, :, 0]
         elif tf.rank(layer_inputs) is 4:
             return layer_inputs[:, :, :, 0]
         else:
@@ -33,7 +33,7 @@ class GraphLayer(ABC):
 
     def get_node_label_ids(self, layer_inputs):
         if tf.rank(layer_inputs) is 3:
-            return layer_inputs[:, : 1]
+            return layer_inputs[:, :, 1]
         elif tf.rank(layer_inputs) is 4:
             return layer_inputs[:, :, :, 1]
         else:
@@ -41,7 +41,7 @@ class GraphLayer(ABC):
 
     def get_edge_label_ids(self, layer_inputs):
         if tf.rank(layer_inputs) is 3:
-            return layer_inputs[:, : 2]
+            return layer_inputs[:, :, 2]
         elif tf.rank(layer_inputs) is 4:
             return layer_inputs[:, :, :, 2]
         else:
