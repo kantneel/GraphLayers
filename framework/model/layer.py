@@ -20,9 +20,6 @@ class GraphLayer(ABC):
     def create_weights(self):
         pass
 
-    def reset(self):
-        pass
-
     def get_node_ids(self, layer_inputs):
         if tf.rank(layer_inputs) is 3:
             return layer_inputs[:, :, 0]
@@ -47,12 +44,41 @@ class GraphLayer(ABC):
         else:
             raise Exception('bad input')
 
+    @abstractmethod
+    def create_node_label_embeds(self):
+        # try self.create_default_node_label_embeds()
+        raise NotImplementedError("Abstract Method")
+
+    def create_default_node_label_embeds(self):
+        initializer = tf.contrib.layers.xavier_initializer()
+        with tf.variable_scope(self.name):
+            self.node_label_embeds = tf.Variable(
+                initializer([
+                    self.network_params.num_node_labels,
+                    self.layer_params.node_label_embed_size]),
+                name='node_label_embeds')
+
+    @abstractmethod
+    def create_edge_label_embeds(self):
+        # try self.create_default_edge_label_embeds()
+        raise NotImplementedError("Abstract Method")
+
+    def create_default_edge_label_embeds(self):
+        initializer = tf.contrib.layers.xavier_initializer()
+        with tf.variable_scope(self.name):
+            self.edge_label_embeds = tf.Variable(
+                initializer([
+                    self.network_params.num_edge_labels,
+                    self.layer_params.edge_label_embed_size]),
+                name='edge_label_embeds')
+
+    @abstractmethod
+    def __call__(self):
+        raise NotImplementedError("Abstract Method")
+
     def __str__(self):
         pass
 
     def __repr__(self):
         pass
 
-    @abstractmethod
-    def __call__(self):
-        raise NotImplementedError("Abstract Method")
