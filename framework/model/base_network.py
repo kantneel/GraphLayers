@@ -19,21 +19,47 @@ class GraphNetwork(object):
         self.layers = []
         self.ops = {}
 
-    def create_embeddings(self):
-        initializer = tf.contrib.layers.xavier_initializer()
-        self.node_embeddings = tf.Variable(
-            initializer([self.network_params.num_nodes, self.layer_params.node_embed_size]),
-            name='node_embeddings')
-        self.node_label_embeddings = tf.Variable(
-            initializer([self.network_params.num_node_labels, self.layer_params.node_label_embed_size]),
-            name='node_label_embeddings')
-        self.edge_label_embeddings = tf.Variable(
-            initializer([self.network_params.num_edge_labels, self.layer_params.edge_label_embed_size]),
-            name='edge_label_embeddings')
-
     def add_layer(self, new_layer):
         self.layers.append(new_layer)
         # check that layer properties are compatible
+
+    def get_filler_tensor(self, input_split_type, max_degree,
+                          mask_indices, mask_update_shape):
+        net_p = self.network_params
+        num_nodes = tf.size(self.placeholders.node_labels)
+        split_to_shape = {
+            'nodes'       : [num_nodes,
+                             max_degree, 1],
+            'node_labels' : [net_p.num_node_labels,
+                             num_nodes,
+                             max_degree, 1],
+            'edge_labels' : [net_p.num_edge_labels,
+                             num_nodes,
+                             max_degree, 1]
+        }
+        if input_split_type not in split_to_shape.keys():
+            raise Exception("arg input_split_type must be one of 'nodes', \
+                            'node_labels' or 'edge_labels'")
+
+        filler_tensor_shape = split_to_shape[input_split_type]
+        fill_values = [num_nodes, net_p.num_node_labels, net_p.num_edge_labels]
+        blank_tensors = []
+        for val in fill_values:
+            blank_tensors.append(tf.fill(filler_tensor_shape, val))
+
+        filler_tensor = tf.concat(blank_tensors, axis=-1)
+
+        # modify this shape for use in mask creation
+        mask_tensor_shape = filler_tensor_shape[-1] + [3]
+        filler_mask = tf.scatter_nd(
+            indices=mask_indices,
+            updates=tf.ones(mask_update_shape),
+            shape=mask_tensor_shape)
+
+        # now filler_tensor is zero where updates will be applied
+        # and equal to num_nodes/num_node_labels/num_edge_labels elsewhere
+        filler_tensor = filler_tensor * tf.cast(tf.equal(filler_mask, 0), tf.int32)
+        return filler_tensor
 
     def get_messages(self, layer):
         """
@@ -42,21 +68,29 @@ class GraphNetwork(object):
         """
 
         sorted_messages = self.placeholders.sorted_messages
-        # Indices [0, 2, 3] selected because of assigned values at line 56
+        # Indices [0, 2, 3] correspond to source, source label and edge label ids
         sorted_embed_messages = sorted_messages[:, [0, 2, 3]]
         max_degree = tf.reduce_max(self.placeholders.in_degrees)
-
+        # scatter into [n, k, 3] where we have [n, k, 1] * num_nodes,
         # scatter options
-        case = 0
         argv = []
         config = layer.get_input_config()
         if config.source_only:
             # just split by source node
             # shape: [n, k, 3]
+            filler_tensor = self.get_filler_tensor(
+                input_split_type='nodes',
+                max_degree=max_degree,
+                mask_indices=self.placeholders.in_degrees,
+                mask_update_shape=tf.shape(sorted_embed_messages))
+
             messages_by_source_only = tf.scatter_nd(
                 indices=self.placeholders.in_degrees,
                 updates=sorted_embed_messages,
-                shape=[tf.size(self.placeholders.node_labels), max_degree, 3])
+                shape=tf.shape(filler_tensor))
+            # now messages_by_source_tensor has ids in correct positions
+            # and ids which correspond to zero embeddings elsewhere
+            messages_by_source_only += filler_tensor
             argv.append(messages_by_source_only)
 
         if config.source_label:
@@ -66,11 +100,18 @@ class GraphNetwork(object):
             split_by_label_indices = tf.concat(
                 [source_node_labels, self.placeholders.in_degrees], axis=1)
 
+            filler_tensor = self.get_filler_tensor(
+                input_split_type='node_labels',
+                max_degree=max_degree,
+                mask_indices=split_by_label_indices,
+                mask_update_shape=tf.shape(sorted_embed_messages))
+
             messages_by_source_label = tf.scatter_nd(
                 indices=split_by_label_indices,
                 updates=sorted_embed_messages,
-                shape=[self.network_params.num_node_labels,
-                       tf.size(self.placeholders.node_labels), max_degree, 3])
+                shape=tf.shape(filler_tensor))
+
+            messages_by_source_label += filler_tensor
             argv.append(messages_by_source_label)
 
         if config.edge_label:
@@ -80,12 +121,18 @@ class GraphNetwork(object):
             split_by_label_indices = tf.concat(
                 [edge_labels, self.placeholders.in_degrees], axis=1)
 
+            filler_tensor = self.get_filler_tensor(
+                input_split_type='edge_labels',
+                max_degree=max_degree,
+                mask_indices=split_by_label_indices,
+                mask_update_shape=tf.shape(sorted_embed_messages))
+
             messages_by_edge_label = tf.scatter_nd(
                 indices=split_by_label_indices,
                 updates=sorted_embed_messages,
-                shape=[self.network_params.num_edge_labels,
-                       tf.size(self.placeholders.node_labels), max_degree, 3])
+                shape=tf.shape(filler_tensor))
 
+            messages_by_edge_label += filler_tensor
             argv.append(messages_by_edge_label)
 
         return argv
@@ -153,7 +200,6 @@ class GraphNetwork(object):
         #from tensorflow.python import debug as tf_debug
         #self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
         with self.graph.as_default():
-            self.create_embeddings()
             self.make_model()
             if mode == 'training':
                 self.make_train_step()

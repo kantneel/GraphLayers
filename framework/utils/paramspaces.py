@@ -1,5 +1,3 @@
-from collections import namedtuple
-
 class GraphNetworkParams(object):
     def __init__(self, num_nodes, num_node_labels=1, num_edge_labels=1):
         self.num_nodes = num_nodes
