@@ -20,29 +20,64 @@ class GraphLayer(ABC):
     def create_weights(self):
         pass
 
-    def get_node_ids(self, layer_inputs):
-        if tf.rank(layer_inputs) is 3:
-            return layer_inputs[:, :, 0]
-        elif tf.rank(layer_inputs) is 4:
-            return layer_inputs[:, :, :, 0]
-        else:
-            raise Exception('bad input')
+    #def get_node_ids(self, layer_inputs):
+    #    if tf.rank(layer_inputs) is 3:
+    #        return layer_inputs[:, :, 0]
+    #    elif tf.rank(layer_inputs) is 4:
+    #        return layer_inputs[:, :, :, 0]
+    #    else:
+    #        raise Exception('bad input')
 
-    def get_node_label_ids(self, layer_inputs):
-        if tf.rank(layer_inputs) is 3:
-            return layer_inputs[:, :, 1]
-        elif tf.rank(layer_inputs) is 4:
-            return layer_inputs[:, :, :, 1]
-        else:
-            raise Exception('bad input')
+    #def get_node_label_ids(self, layer_inputs):
+    #    if tf.rank(layer_inputs) is 3:
+    #        return layer_inputs[:, :, 1]
+    #    elif tf.rank(layer_inputs) is 4:
+    #        return layer_inputs[:, :, :, 1]
+    #    else:
+    #        raise Exception('bad input')
 
-    def get_edge_label_ids(self, layer_inputs):
+    #def get_edge_label_ids(self, layer_inputs):
+    #    if tf.rank(layer_inputs) is 3:
+    #        return layer_inputs[:, :, 2]
+    #    elif tf.rank(layer_inputs) is 4:
+    #        return layer_inputs[:, :, :, 2]
+    #    else:
+    #        raise Exception('bad input')
+
+    def get_ids_from_inputs(self, layer_inputs, id_type):
+        id_indices = ['nodes', 'node_labels', 'edge_labels']
+        if id_type not in id_indices:
+            raise Exception("arg id_type must be one of 'nodes', \
+                            'node_labels' or 'edge_labels'")
+        id_idx = id_indices.index(id_type)
         if tf.rank(layer_inputs) is 3:
-            return layer_inputs[:, :, 2]
+            return layer_inputs[:, :, id_idx]
         elif tf.rank(layer_inputs) is 4:
-            return layer_inputs[:, :, :, 2]
+            return layer_inputs[:, :, :, id_idx]
         else:
-            raise Exception('bad input')
+            raise Exception("bad layer inputs")
+
+    def get_embeds_with_zeros(self, embeds):
+        embed_dim = tf.shape(embeds)[1]
+        return tf.concat([embeds, tf.zeros([1, embed_dim])], axis=0)
+
+    def get_node_embeds_from_inputs(self, layer_inputs, node_embeds):
+        node_ids = self.get_ids_from_inputs(layer_inputs, id_type='nodes')
+        embeds_with_zeros = self.get_embeds_with_zeros(node_embeds)
+        return tf.nn.embedding_lookup(params=embeds_with_zeros,
+                                      indices=node_ids)
+
+    def get_node_label_embeds_from_inputs(self, layer_inputs):
+        node_label_ids = self.get_ids_from_inputs(layer_inputs, id_type='node_labels')
+        embeds_with_zeros = self.get_embeds_with_zeros(self.node_label_embeds)
+        return tf.nn.embedding_lookup(params=embeds_with_zeros,
+                                      indices=node_label_ids)
+
+    def get_edge_label_embeds(self, layer_inputs):
+        edge_label_ids = self.get_ids_from_inputs(layer_inputs, id_type='edge_labels')
+        embeds_with_zeros = self.get_embeds_with_zeros(self.edge_label_embeds)
+        return tf.nn.embedding_lookup(params=embeds_with_zeros,
+                                      indices=edge_label_ids)
 
     @abstractmethod
     def create_node_label_embeds(self):
