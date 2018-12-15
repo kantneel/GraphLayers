@@ -77,17 +77,17 @@ class GraphNetworkPlaceholders(object):
         pass
 
 class InputConfig(object):
-    def __init__(source_only=True,
+    def __init__(self, source_only=True,
                  source_node_labels=False,
                  edge_labels=False):
         self.source_only = source_only
         self.source_node_labels = source_node_labels
         self.edge_labels = edge_labels
 
-    def set_config(source_only, source_node_labels, edge_labels):
+    def set_config(self, source_only, source_node_labels, edge_labels):
         assert True
         self.source_only = source_only
-        self.source_node_labels = source_node_labels,
+        self.source_node_labels = source_node_labels
         self.edge_labels = edge_labels
 
     @classmethod

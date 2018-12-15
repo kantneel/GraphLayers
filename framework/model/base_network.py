@@ -50,7 +50,7 @@ class GraphNetwork(object):
         filler_tensor = tf.concat(blank_tensors, axis=-1)
 
         # modify this shape for use in mask creation
-        mask_tensor_shape = filler_tensor_shape[-1] + [3]
+        mask_tensor_shape = filler_tensor_shape[:-1] + [3]
         filler_mask = tf.scatter_nd(
             indices=mask_indices,
             updates=tf.ones(mask_update_shape),
@@ -66,10 +66,11 @@ class GraphNetwork(object):
         Takes in a layer and returns the types of messages that the layer
         needs for input based on the layer's InputConfig
         """
-
         sorted_messages = self.placeholders.sorted_messages
         # Indices [0, 2, 3] correspond to source, source label and edge label ids
-        sorted_embed_messages = sorted_messages[:, [0, 2, 3]]
+        sorted_embed_messages = tf.transpose(tf.gather(
+            tf.transpose(sorted_messages), [0, 2, 3]))
+        #sorted_embed_messages = sorted_messages[:, [0, 2, 3]]
         max_degree = tf.reduce_max(self.placeholders.in_degrees)
         # scatter into [n, k, 3] where we have [n, k, 1] * num_nodes,
         # scatter options
@@ -93,7 +94,7 @@ class GraphNetwork(object):
             messages_by_source_only += filler_tensor
             argv.append(messages_by_source_only)
 
-        if config.source_label:
+        if config.source_node_labels:
             # also split by source node label
             # shape: [num_node_labels, n, k, 3]
             source_node_labels = tf.expand_dims(sorted_messages[:, 2], axis=1)
@@ -114,7 +115,7 @@ class GraphNetwork(object):
             messages_by_source_label += filler_tensor
             argv.append(messages_by_source_label)
 
-        if config.edge_label:
+        if config.edge_labels:
             # also split by edge label
             # shape: [num_edge_labels, n, k, 3]
             edge_labels = tf.expand_dims(sorted_messages[:, 3], axis=1)
@@ -142,6 +143,7 @@ class GraphNetwork(object):
         self.placeholders = self.define_placeholders()
         current_node_embeds = tf.one_hot(self.placeholders.node_labels,
                                          depth=self.layer_params.node_embed_size)
+        self.placeholders.in_degrees = tf.squeeze(self.placeholders.in_degrees, 0)
         for layer in self.layers:
             layer.create_weights()
             num_timesteps = getattr(layer, 'num_timesteps', 1)

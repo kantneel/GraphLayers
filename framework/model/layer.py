@@ -1,5 +1,10 @@
+import sys
+sys.path.append('../../')
+import tensorflow as tf
 from abc import ABC, abstractmethod
 from copy import copy
+from framework.utils.paramspaces import InputConfig
+
 
 class GraphLayer(ABC):
     """A GraphLayer is a function that transforms a set of node embeddings"""
@@ -16,6 +21,9 @@ class GraphLayer(ABC):
         else:
             clone.name = name
         return clone
+
+    def get_input_config(self):
+        return self.input_config
 
     def create_weights(self):
         pass
@@ -44,40 +52,38 @@ class GraphLayer(ABC):
     #    else:
     #        raise Exception('bad input')
 
-    def get_ids_from_inputs(self, layer_inputs, id_type):
+    def get_ids_from_inputs(self, layer_inputs, id_type, extra_dim=False):
         id_indices = ['nodes', 'node_labels', 'edge_labels']
         if id_type not in id_indices:
             raise Exception("arg id_type must be one of 'nodes', \
                             'node_labels' or 'edge_labels'")
         id_idx = id_indices.index(id_type)
-        if tf.rank(layer_inputs) is 3:
-            return layer_inputs[:, :, id_idx]
-        elif tf.rank(layer_inputs) is 4:
+        if extra_dim:
             return layer_inputs[:, :, :, id_idx]
         else:
-            raise Exception("bad layer inputs")
+            return layer_inputs[:, :, id_idx]
 
     def get_embeds_with_zeros(self, embeds):
         embed_dim = tf.shape(embeds)[1]
         return tf.concat([embeds, tf.zeros([1, embed_dim])], axis=0)
 
-    def get_node_embeds_from_inputs(self, layer_inputs, node_embeds):
-        node_ids = self.get_ids_from_inputs(layer_inputs, id_type='nodes')
+    def get_node_embeds_from_inputs(self, layer_inputs, node_embeds, extra_dim=False):
+        node_ids = self.get_ids_from_inputs(layer_inputs, id_type='nodes', extra_dim=extra_dim)
         embeds_with_zeros = self.get_embeds_with_zeros(node_embeds)
         return tf.nn.embedding_lookup(params=embeds_with_zeros,
-                                      indices=node_ids)
+                                      ids=node_ids)
 
-    def get_node_label_embeds_from_inputs(self, layer_inputs):
-        node_label_ids = self.get_ids_from_inputs(layer_inputs, id_type='node_labels')
+    def get_node_label_embeds_from_inputs(self, layer_inputs, extra_dim=False):
+        node_label_ids = self.get_ids_from_inputs(layer_inputs, id_type='node_labels', extra_dim=extra_dim)
         embeds_with_zeros = self.get_embeds_with_zeros(self.node_label_embeds)
         return tf.nn.embedding_lookup(params=embeds_with_zeros,
-                                      indices=node_label_ids)
+                                      ids=node_label_ids)
 
-    def get_edge_label_embeds(self, layer_inputs):
-        edge_label_ids = self.get_ids_from_inputs(layer_inputs, id_type='edge_labels')
+    def get_edge_label_embeds(self, layer_inputs, extra_dim=False):
+        edge_label_ids = self.get_ids_from_inputs(layer_inputs, id_type='edge_labels', extra_dim=extra_dim)
         embeds_with_zeros = self.get_embeds_with_zeros(self.edge_label_embeds)
         return tf.nn.embedding_lookup(params=embeds_with_zeros,
-                                      indices=edge_label_ids)
+                                      ids=edge_label_ids)
 
     @abstractmethod
     def create_node_label_embeds(self):

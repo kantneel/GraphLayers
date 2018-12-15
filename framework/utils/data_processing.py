@@ -191,7 +191,7 @@ class DataProcessor(object):
                 'num_graphs' : num_graphs_in_batch,
                 'graph_state_keep_prob' : state_dropout_keep_prob,
                 'edge_weight_dropout_keep_prob' : edge_weights_dropout_keep_prob,
-                'adjacency_lists' : None,
+                'adjacency_lists' : [None] * self.num_edge_labels,
                 'in_degrees' : None,
                 'sorted_messages' : None
             }
@@ -219,6 +219,7 @@ class DataProcessor(object):
             sorted_messages = concat_messages[np.argsort(-concat_messages[:, 1])]
             batch_feed_dict['sorted_messages'] = sorted_messages
 
+            in_degree_indices = np.zeros((sum(in_degrees), 2))
             message_num = 0
             for i, d in enumerate(in_degrees):
                 in_degree_indices[message_num : message_num + d] = \
