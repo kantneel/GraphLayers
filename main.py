@@ -33,10 +33,9 @@ p = data_processor.placeholders
 placeholders = GraphNetworkPlaceholders(
     input_node_embeds=p['input_node_embeds'],
     node_labels=p['node_labels'],
-    adjacency_lists=p['adjacency_lists'],
     num_graphs=p['num_graphs'],
     graph_nodes_list=p['graph_nodes_list'],
-    in_degrees=p['in_degrees'],
+    in_degrees=p['in_degree_indices'],
     targets=p['target_values'],
     sorted_messages=p['sorted_messages']
 )

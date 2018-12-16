@@ -40,7 +40,7 @@ class DataProcessor(object):
             'num_graphs' : tf.placeholder(tf.int32, [], name='num_graphs'),
             'graph_nodes_list' : tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
             'graph_state_keep_prob' : tf.placeholder(tf.float32, None, name='graph_state_keep_prob'),
-            'in_degrees' : tf.placeholder(tf.int32, [None, 2], name='in_degrees'),
+            'in_degree_indices' : tf.placeholder(tf.int32, [None, 2], name='in_degree_indices'),
             'sorted_messages' : tf.placeholder(tf.int32, [None, 4], name='sorted_messages'),
             'out_layer_dropout_keep_prob' : tf.placeholder(
                 tf.float32, [], name='out_layer_dropout_keep_prob'),
@@ -151,7 +151,6 @@ class DataProcessor(object):
             batch_node_features = []
             batch_target_task_values = []
             batch_adjacency_lists = [[] for _ in range(self.num_edge_labels)]
-            batch_num_incoming_edges_per_label = []
             batch_graph_nodes_list = []
             node_offset = 0
 
@@ -171,18 +170,11 @@ class DataProcessor(object):
                         batch_adjacency_lists[i].append(cur_graph['adjacency_lists'][i] + node_offset)
 
                 # Turn counters for incoming edges into np array:
-                num_incoming_edges_per_label = np.zeros((num_nodes_in_graph, self.num_edge_labels))
-                for (e_type, num_incoming_edges_per_label_dict) in cur_graph['num_incoming_edge_per_label'].items():
-                    for (node_id, edge_count) in num_incoming_edges_per_label_dict.items():
-                        num_incoming_edges_per_label[node_id, e_type] = edge_count
-                batch_num_incoming_edges_per_label.append(num_incoming_edges_per_label)
                 batch_target_task_values.append(cur_graph['label'])
                 num_graphs += 1
                 num_graphs_in_batch += 1
                 node_offset += num_nodes_in_graph
-
             node_labels = np.argmax(np.array(batch_node_features), axis=1)
-
             batch_feed_dict = {
                 'input_node_embeds' : np.array(batch_node_features),
                 'node_labels' : node_labels,
@@ -191,12 +183,11 @@ class DataProcessor(object):
                 'num_graphs' : num_graphs_in_batch,
                 'graph_state_keep_prob' : state_dropout_keep_prob,
                 'edge_weight_dropout_keep_prob' : edge_weights_dropout_keep_prob,
-                'adjacency_lists' : [None] * self.num_edge_labels,
-                'in_degrees' : None,
+                'in_degree_indices' : None,
                 'sorted_messages' : None
             }
             # Merge adjacency lists and information about incoming nodes:
-            in_degrees = [0 for _ in range(len(batch_node_features))]
+            in_degree_indices = [0 for _ in range(len(batch_node_features))]
             all_messages = []
             for i in range(self.num_edge_labels):
                 if len(batch_adjacency_lists[i]) > 0:
@@ -210,20 +201,18 @@ class DataProcessor(object):
                                                          message_node_labels, # 2 - source node label
                                                          message_edge_labels], 1) # 3 - edge label
                 all_messages.append(messages_of_edge_label)
-
-                batch_feed_dict['adjacency_lists'][i] = adj_list
                 for row in adj_list:
-                    in_degrees[row[1]] += 1
+                    in_degree_indices[row[1]] += 1
 
             concat_messages = np.concatenate(all_messages, 0)
             sorted_messages = concat_messages[np.argsort(-concat_messages[:, 1])]
             batch_feed_dict['sorted_messages'] = sorted_messages
 
-            in_degree_indices = np.zeros((sum(in_degrees), 2))
+            in_degree_indices = np.zeros((sum(in_degree_indices), 2))
             message_num = 0
-            for i, d in enumerate(in_degrees):
+            for i, d in enumerate(in_degree_indices):
                 in_degree_indices[message_num : message_num + d] = \
                     np.vstack([np.ones(d, dtype=int) * i, np.arange(d, dtype=int)]).transpose()
                 message_num += d
-            batch_feed_dict['in_degrees'] = in_degree_indices
+            batch_feed_dict['in_degree_indices'] = in_degree_indices
             yield batch_feed_dict

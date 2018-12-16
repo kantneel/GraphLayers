@@ -71,7 +71,7 @@ class GraphNetwork(object):
         sorted_embed_messages = tf.transpose(tf.gather(
             tf.transpose(sorted_messages), [0, 2, 3]))
         #sorted_embed_messages = sorted_messages[:, [0, 2, 3]]
-        max_degree = tf.reduce_max(self.placeholders.in_degrees[:, 1])
+        max_degree = tf.reduce_max(self.placeholders.in_degree_indices[:, 1])
         # scatter into [n, k, 3] where we have [n, k, 1] * num_nodes,
         # scatter options
         argv = []
@@ -82,11 +82,11 @@ class GraphNetwork(object):
             filler_tensor = self.get_filler_tensor(
                 input_split_type='nodes',
                 max_degree=max_degree,
-                mask_indices=self.placeholders.in_degrees,
+                mask_indices=self.placeholders.in_degree_indices,
                 mask_update_shape=tf.shape(sorted_embed_messages))
 
             messages_by_source_only = tf.scatter_nd(
-                indices=self.placeholders.in_degrees,
+                indices=self.placeholders.in_degree_indices,
                 updates=sorted_embed_messages,
                 shape=tf.shape(filler_tensor))
             # now messages_by_source_tensor has ids in correct positions
@@ -99,7 +99,7 @@ class GraphNetwork(object):
             # shape: [num_node_labels, n, k, 3]
             source_node_labels = tf.expand_dims(sorted_messages[:, 2], axis=1)
             split_by_label_indices = tf.concat(
-                [source_node_labels, self.placeholders.in_degrees], axis=1)
+                [source_node_labels, self.placeholders.in_degree_indices], axis=1)
 
             filler_tensor = self.get_filler_tensor(
                 input_split_type='node_labels',
@@ -120,7 +120,7 @@ class GraphNetwork(object):
             # shape: [num_edge_labels, n, k, 3]
             edge_labels = tf.expand_dims(sorted_messages[:, 3], axis=1)
             split_by_label_indices = tf.concat(
-                [edge_labels, self.placeholders.in_degrees], axis=1)
+                [edge_labels, self.placeholders.in_degree_indices], axis=1)
 
             filler_tensor = self.get_filler_tensor(
                 input_split_type='edge_labels',
@@ -143,7 +143,7 @@ class GraphNetwork(object):
         self.placeholders = self.define_placeholders()
         current_node_embeds = tf.one_hot(self.placeholders.node_labels,
                                          depth=self.layer_params.node_embed_size)
-        self.placeholders.in_degrees = tf.squeeze(self.placeholders.in_degrees, 0)
+        self.placeholders.in_degree_indices = tf.squeeze(self.placeholders.in_degree_indices, 0)
         for layer in self.layers:
             layer.create_weights()
             num_timesteps = getattr(layer, 'num_timesteps', 1)
@@ -180,12 +180,10 @@ class GraphNetwork(object):
                 tf.float32, [None, self.layer_params.node_embed_size], name='input_node_embeds'),
             node_labels=tf.placeholder(
                 tf.int32, [None], name='node_labels'),
-            adjacency_lists=tuple([tf.placeholder(
-                tf.int32, [None, 2], name='adjacency_e%s' % e) for e in range(self.network_params.num_edge_labels)]),
             num_graphs=tf.placeholder(tf.int32, [], name='num_graphs'),
             graph_nodes_list=tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
             targets=tf.placeholder(tf.int32, [None], name='targets'),
-            in_degrees=tf.placeholder(tf.int32, [None, 2], name='in_degrees'),
+            in_degree_indices=tf.placeholder(tf.int32, [None, 2], name='in_degree_indices'),
             sorted_messages=tf.placeholder(tf.int32, [None, 4], name='sorted_messages')
         )
         return placeholders
@@ -351,8 +349,7 @@ class GraphNetwork(object):
                 self.placeholders.graph_nodes_list : batch_data_dict['graph_nodes_list'],
                 self.placeholders.targets : batch_data_dict['targets'],
                 self.placeholders.num_graphs : batch_data_dict['num_graphs'],
-                self.placeholders.adjacency_lists : batch_data_dict['adjacency_lists'],
-                self.placeholders.in_degrees : batch_data_dict['in_degrees'],
+                self.placeholders.in_degree_indices : batch_data_dict['in_degree_indices'],
                 self.placeholders.sorted_messages : batch_data_dict['sorted_messages']
             }
             num_graphs = batch_data[self.placeholders.num_graphs]
