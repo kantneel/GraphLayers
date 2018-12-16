@@ -10,16 +10,16 @@ from framework.utils.data_processing import DataProcessor
 import tensorflow as tf
 
 # first preprocess data to get num edge types, num node types, num classes
-train_path = 'depth1_data/d3_100k.data'
-valid_path = train_path
-batch_size = 3000
+train_path = '../Featurization-2/d3_1m.data'
+valid_path = '../Featurization-2/d3_100k.data'
+batch_size = 10000
 
 layer_params = GraphLayerParams(
     node_embed_size=64,
     node_label_embed_size=64,
     edge_label_embed_size=64)
 
-data_processor = DataProcessor('depth1_data/d3_100k.data', batch_size, layer_params, is_training_data=True)
+data_processor = DataProcessor(train_path, batch_size, layer_params, is_training_data=True)
 network_params = GraphNetworkParams(
     num_nodes=batch_size,
     num_node_labels=data_processor.num_node_labels,

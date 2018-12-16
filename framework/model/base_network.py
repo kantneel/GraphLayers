@@ -71,7 +71,7 @@ class GraphNetwork(object):
         sorted_embed_messages = tf.transpose(tf.gather(
             tf.transpose(sorted_messages), [0, 2, 3]))
         #sorted_embed_messages = sorted_messages[:, [0, 2, 3]]
-        max_degree = tf.reduce_max(self.placeholders.in_degrees)
+        max_degree = tf.reduce_max(self.placeholders.in_degrees[:, 1])
         # scatter into [n, k, 3] where we have [n, k, 1] * num_nodes,
         # scatter options
         argv = []
