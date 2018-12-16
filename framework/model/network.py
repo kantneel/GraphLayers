@@ -355,11 +355,8 @@ class GraphNetwork(object):
             num_graphs = batch_data[self.placeholders.num_graphs]
             processed_graphs += num_graphs
             if data_processor.is_training_data:
-                #batch_data[self.placeholders['out_layer_dropout_keep_prob']] = self.params[
-                #    'out_layer_dropout_keep_prob']
                 fetch_list = [self.ops['loss'], accuracy_op, self.ops['train_step']]
             else:
-                #batch_data[self.placeholders['out_layer_dropout_keep_prob']] = 1.0
                 fetch_list = [self.ops['loss'], accuracy_op]
 
             result = self.sess.run(fetch_list, feed_dict=batch_data)

@@ -59,9 +59,11 @@ class DataProcessor(object):
     def load_data(self, use_memory=False, use_disk=False):
         reader = IndexedFileReader(self.path)
         if use_memory:
-            result = self.process_raw_graphs(reader)
+            processed_graphs = []
+            for d in tqdm.tqdm(reader, desc='Processing Raw Data'):
+                processed_graphs.append(self.process_raw_graph(d))
             reader.close()
-            return result
+            return processed_graphs
 
         if use_disk:
             w = IndexedFileWriter(path + '.processed')
@@ -76,36 +78,13 @@ class DataProcessor(object):
         reader.set_loader(lambda x: self.process_raw_graph(pickle.load(x)))
         return reader
 
-    def process_raw_graphs(self, raw_data):
-        processed_graphs = []
-        for d in tqdm.tqdm(raw_data, desc='Processing Raw Data'):
-            processed_graphs.append(self.process_raw_graph(d))
-
-        if self.is_training_data:
-            np.random.shuffle(processed_graphs)
-
-        return processed_graphs
-
     def process_raw_graph(self, graph):
-        (adjacency_lists, num_incoming_edge_per_label) = self.graph_to_adjacency_lists(graph['edges'])
-        return {"adjacency_lists": adjacency_lists,
-                "num_incoming_edge_per_label": num_incoming_edge_per_label,
-                "init": self.to_one_hot(graph["node_features"], self.num_node_labels),
-                "label": graph.get("label", 0)}
-
-    def graph_to_adjacency_lists(self, graph):
         adj_lists = collections.defaultdict(list)
-        num_incoming_edges_dicts_per_label = {}
-        for src, e, dest in graph:
+        for src, e, dest in graph['edges']:
             fwd_edge_label = e
             adj_lists[fwd_edge_label].append((src, dest))
-            if fwd_edge_label not in num_incoming_edges_dicts_per_label:
-                num_incoming_edges_dicts_per_label[fwd_edge_label] = collections.defaultdict(int)
-
-            num_incoming_edges_dicts_per_label[fwd_edge_label][dest] += 1
             if self.tie_fwd_bkwd:
                 adj_lists[fwd_edge_label].append((dest, src))
-                num_incoming_edges_dicts_per_label[fwd_edge_label][src] += 1
 
         final_adj_lists = {e: np.array(sorted(lm), dtype=np.int32)
                            for e, lm in adj_lists.items()}
@@ -115,13 +94,10 @@ class DataProcessor(object):
             for (edge_type, edges) in adj_lists.items():
                 bwd_edge_label = self.num_edge_labels + edge_label
                 final_adj_lists[bwd_edge_label] = np.array(sorted((y, x) for (x, y) in edges), dtype=np.int32)
-                if bwd_edge_label not in num_incoming_edges_dicts_per_label:
-                    num_incoming_edges_dicts_per_label[bwd_edge_label] = collections.defaultdict(int)
 
-                for (x, y) in edges:
-                    num_incoming_edges_dicts_per_label[bwd_edge_label][y] += 1
-
-        return final_adj_lists, num_incoming_edges_dicts_per_label
+        return {"adjacency_lists": final_adj_lists,
+                "init": self.to_one_hot(graph["node_features"], self.num_node_labels),
+                "label": graph.get("label", 0)}
 
     def to_one_hot(self, vals, depth):
         res = []
@@ -143,9 +119,7 @@ class DataProcessor(object):
                 np.random.shuffle(dataset)
 
         # Pack until we cannot fit more graphs in the batch
-        state_dropout_keep_prob = edge_weights_dropout_keep_prob = 1
         num_graphs = 0
-
         while num_graphs < len(dataset):
             num_graphs_in_batch = 0
             batch_node_features = []
@@ -175,19 +149,8 @@ class DataProcessor(object):
                 num_graphs_in_batch += 1
                 node_offset += num_nodes_in_graph
             node_labels = np.argmax(np.array(batch_node_features), axis=1)
-            batch_feed_dict = {
-                'input_node_embeds' : np.array(batch_node_features),
-                'node_labels' : node_labels,
-                'graph_nodes_list' : np.concatenate(batch_graph_nodes_list),
-                'targets' : batch_target_task_values,
-                'num_graphs' : num_graphs_in_batch,
-                'graph_state_keep_prob' : state_dropout_keep_prob,
-                'edge_weight_dropout_keep_prob' : edge_weights_dropout_keep_prob,
-                'in_degree_indices' : None,
-                'sorted_messages' : None
-            }
             # Merge adjacency lists and information about incoming nodes:
-            in_degree_indices = [0 for _ in range(len(batch_node_features))]
+            in_degrees = [0 for _ in range(len(batch_node_features))]
             all_messages = []
             for i in range(self.num_edge_labels):
                 if len(batch_adjacency_lists[i]) > 0:
@@ -202,17 +165,25 @@ class DataProcessor(object):
                                                          message_edge_labels], 1) # 3 - edge label
                 all_messages.append(messages_of_edge_label)
                 for row in adj_list:
-                    in_degree_indices[row[1]] += 1
+                    in_degrees[row[1]] += 1
 
             concat_messages = np.concatenate(all_messages, 0)
             sorted_messages = concat_messages[np.argsort(-concat_messages[:, 1])]
-            batch_feed_dict['sorted_messages'] = sorted_messages
 
-            in_degree_indices = np.zeros((sum(in_degree_indices), 2))
+            in_degree_indices = np.zeros((sum(in_degrees), 2))
             message_num = 0
-            for i, d in enumerate(in_degree_indices):
+            for i, d in enumerate(in_degrees):
                 in_degree_indices[message_num : message_num + d] = \
                     np.vstack([np.ones(d, dtype=int) * i, np.arange(d, dtype=int)]).transpose()
                 message_num += d
-            batch_feed_dict['in_degree_indices'] = in_degree_indices
+
+            batch_feed_dict = {
+                'input_node_embeds' : np.array(batch_node_features),
+                'node_labels' : node_labels,
+                'graph_nodes_list' : np.concatenate(batch_graph_nodes_list),
+                'targets' : batch_target_task_values,
+                'num_graphs' : num_graphs_in_batch,
+                'in_degree_indices' : in_degree_indices,
+                'sorted_messages' : sorted_messages
+            }
             yield batch_feed_dict
