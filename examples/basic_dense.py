@@ -8,7 +8,6 @@ class BasicDenseLayer(GraphLayer):
     def __init__(self, layer_params, network_params,
                  activation=None,
                  name='basic_dense'):
-
         super().__init__(layer_params, network_params, name)
 
         self.activation = activation
