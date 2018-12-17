@@ -65,12 +65,6 @@ class GatedLayer(GraphLayer):
     def __call__(self, layer_input_embeds, target_embeds):
         # input: [num_edge_labels, n, k, 3], [n, d1]
 
-        # notes: now input is [n, k, 3], and will also need to create embedding layer
-        # which will take indices and convert into d1, d2, d3.
-        # layer should be initialized with embedding matrices.
-        # output is still [n, d1]
-        # fetch node_embeddings from target_embeds
-
         # [num_edge_labels, n, k, d1]
         node_embeds = self.get_node_embeds_from_inputs(layer_input_embeds, target_embeds,
                                                        extra_dim=True)

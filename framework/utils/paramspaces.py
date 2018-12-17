@@ -34,8 +34,6 @@ class ExperimentParams(object):
                  top_k=1,
                  mode='train',
                  model=None,
-                 train=None,
-                 valid=None,
                  clamp_grad_norm=1,
                  rng=2018):
         self.lr = lr
@@ -47,10 +45,12 @@ class ExperimentParams(object):
         self.top_k = top_k
         self.mode = mode
         self.model = model
-        self.train = train
-        self.valid = valid
         self.clamp_grad_norm = clamp_grad_norm
         self.rng = rng
+
+    @classmethod
+    def default(cls):
+        return cls()
 
     def check_valid_args(self, args):
         pass

@@ -17,17 +17,17 @@ layer_params = GraphLayerParams(
     node_label_embed_size=64,
     edge_label_embed_size=64)
 
-data_processor = DataProcessor(train_path, batch_size, layer_params, is_training_data=True)
+train_data_processor = DataProcessor(train_path, batch_size, layer_params, is_training_data=True)
+valid_data_processor = DataProcessor.copy_params(train_data_processor, valid_path, is_training_data=False)
+
 network_params = GraphNetworkParams(
     num_nodes=batch_size,
-    num_node_labels=data_processor.num_node_labels,
-    num_edge_labels=data_processor.num_edge_labels)
+    num_node_labels=train_data_processor.num_node_labels,
+    num_edge_labels=train_data_processor.num_edge_labels)
 
-experiment_params = ExperimentParams(
-    train=train_path,
-    valid=valid_path)
+experiment_params = ExperimentParams.default()
 
-p = data_processor.placeholders
+p = train_data_processor.placeholders
 placeholders = GraphNetworkPlaceholders(
     input_node_embeds=p['input_node_embeds'],
     node_labels=p['node_labels'],
@@ -37,20 +37,12 @@ placeholders = GraphNetworkPlaceholders(
     targets=p['target_values'],
     sorted_messages=p['sorted_messages']
 )
-net = GraphNetwork(network_params, layer_params, experiment_params, placeholders)
-#standard_gated_layer = GatedLayer(layer_params, network_params,
-#                                  name='gated_1')
-
-#net.add_layer(standard_gated_layer)
-#net.add_layer(standard_gated_layer.clone(name='gated_2'))
-#net.add_layer(PoolingLayer(layer_params, network_params))
-#net.add_layer(DenseOutputLayer(layer_params, network_params,
-#                               [128], data_processor.num_classes))
-
+net = GraphNetwork(network_params, layer_params, experiment_params,
+                   train_data_processor=train_data_processor,
+                   valid_data_processor=valid_data_processor)
 net.add_layer(GatedLayer(layer_params, network_params))
 net.add_layer(GatedLayer(layer_params, network_params))
-#net.add_layer(PoolingLayer(layer_params, network_params))
-net.run()
+net.run_training()
 
 
 

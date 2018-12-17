@@ -9,30 +9,44 @@ from framework.utils.io import IndexedFileReader, IndexedFileWriter
 
 
 class DataProcessor(object):
-    def __init__(self, path, batch_size, layer_params, tie_fwd_bkwd=True, is_training_data=False):
+    def __init__(self, path, batch_size, layer_params, tie_fwd_bkwd=True,
+                 is_training_data=False, run_prelim_pass=True):
         self.path = path
         self.batch_size = batch_size
         self.layer_params = layer_params
         self.tie_fwd_bkwd = tie_fwd_bkwd
         self.is_training_data = is_training_data
 
-        reader = IndexedFileReader(path)
+        if run_prelim_pass:
+            reader = IndexedFileReader(path)
 
-        num_fwd_edge_labels = 0
-        num_node_labels = 0
-        num_classes = 0
-        depth = 1
-        for g in tqdm.tqdm(reader, desc='Preliminary Data Pass', dynamic_ncols=True):
-            num_fwd_edge_labels = max(num_fwd_edge_labels, max([e[1] for e in g['edges']] + [-1]) + 1)
-            num_node_labels = max(num_node_labels, max(g['node_features']) + 1)
-            num_classes = max(num_classes, g['label'] + 1)
+            num_fwd_edge_labels = 0
+            num_node_labels = 0
+            num_classes = 0
+            depth = 1
+            for g in tqdm.tqdm(reader, desc='Preliminary Data Pass', dynamic_ncols=True):
+                num_fwd_edge_labels = max(num_fwd_edge_labels, max([e[1] for e in g['edges']] + [-1]) + 1)
+                num_node_labels = max(num_node_labels, max(g['node_features']) + 1)
+                num_classes = max(num_classes, g['label'] + 1)
 
-        reader.close()
-        self.num_edge_labels = num_fwd_edge_labels * (1 if tie_fwd_bkwd else 2)
-        self.num_node_labels = num_node_labels
-        self.num_classes = num_classes
+            reader.close()
+            self.num_edge_labels = num_fwd_edge_labels * (1 if tie_fwd_bkwd else 2)
+            self.num_node_labels = num_node_labels
+            self.num_classes = num_classes
 
-        self.placeholders = self.define_placeholders()
+            self.placeholders = self.define_placeholders()
+
+    @classmethod
+    def copy_params(cls, other, path, is_training_data):
+        assert isinstance(other, DataProcessor)
+        instance = cls(path, other.batch_size, other.layer_params,
+                       other.tie_fwd_bkwd, is_training_data, run_prelim_pass=False)
+        instance.num_edge_labels = other.num_edge_labels
+        instance.num_node_labels = other.num_node_labels
+        instance.num_classes = other.num_classes
+        instance.define_placeholders()
+
+        return instance
 
     def define_placeholders(self):
         placeholders = {

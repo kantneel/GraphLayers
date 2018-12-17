@@ -11,11 +11,16 @@ from framework.utils.io import IndexedFileReader, IndexedFileWriter, ThreadedIte
 from framework.utils.paramspaces import GraphNetworkPlaceholders
 
 class GraphNetwork(object):
-    def __init__(self, network_params, layer_params, exp_params, placeholders, name='graph_network'):
+    def __init__(self, network_params, layer_params, exp_params,
+                 train_data_processor=None, valid_data_processor=None,
+                 name='graph_network'):
         self.name = name
         self.network_params = network_params
         self.layer_params = layer_params
         self.exp_params = exp_params
+
+        self.train_data_processor = train_data_processor
+        self.valid_data_processor = valid_data_processor
         self.layers = []
         self.ops = {}
 
@@ -152,13 +157,15 @@ class GraphNetwork(object):
                 layer_input_args.append(current_node_embeds)
                 current_node_embeds = layer(*layer_input_args)
 
-        current_node_embeds = tf.layers.dense(current_node_embeds, 100)
-        current_node_embeds = tf.layers.dense(current_node_embeds,
+        # Applying two dense layers to get final node embeds
+        current_node_embeds = tf.layers.dense(current_node_embeds, 100,
+                                              activation=tf.nn.relu)
+        final_node_embeds = tf.layers.dense(current_node_embeds,
                                               self.train_data_processor.num_classes)
         # Pooling the nodes for each graph. I suppose customizing
         # this will be a feature of the GraphNetwork class.
         logits = tf.unsorted_segment_sum(
-            data=current_node_embeds,
+            data=final_node_embeds,
             segment_ids=self.placeholders.graph_nodes_list,
             num_segments=self.placeholders.num_graphs)
         labels = self.placeholders.targets
@@ -378,10 +385,6 @@ class GraphNetwork(object):
         instance_per_sec = processed_graphs / (time.time() - start_time)
         return loss, accuracy, instance_per_sec
 
-    def run(self):
-        if self.exp_params.mode == 'train':
-            self.run_training()
-
     def run_training(self):
         self.wdir = self.exp_params.wdir
         if self.wdir is None:
@@ -406,12 +409,6 @@ class GraphNetwork(object):
         random.seed(self.exp_params.rng)
         np.random.seed(self.exp_params.rng)
 
-
-        #  Load up the data
-        self.train_data_processor = DataProcessor(self.exp_params.train, self.network_params.num_nodes,
-                                        self.layers[0].layer_params, is_training_data=True)
-        self.valid_data_processor = DataProcessor(self.exp_params.valid, self.network_params.num_nodes,
-                                        self.layers[0].layer_params, is_training_data=False)
         #  Setup the model
         self.build_graph_model(mode='training', restore_file=None)
 
