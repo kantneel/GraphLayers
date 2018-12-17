@@ -7,8 +7,8 @@ from framework.model.layer import GraphLayer
 class GatedLayer(GraphLayer):
     def __init__(self, layer_params, network_params,
                  activation='tanh',
-                 edge_dropout_keep_prob=0.8,
-                 node_dropout_keep_prob=0.8,
+                 edge_dropout_keep_prob=1,
+                 node_dropout_keep_prob=1,
                  num_timesteps=1,
                  cell_type='gru',
                  name='gated_layer'):
@@ -83,10 +83,14 @@ class GatedLayer(GraphLayer):
         edge_biases *= mask
 
         transformed_node_embeds += edge_biases
+        # [n, k, d1]
         transformed_node_embeds = tf.reduce_sum(transformed_node_embeds, axis=0)
+
+        #num_nonzero = tf.reduce_sum(tf.cast(transformed_node_embeds[:, :, 0], tf.bool), axis=1)
+        num_nonzero = tf.cast(tf.count_nonzero(transformed_node_embeds[:, :, 0], axis=1, keep_dims=True), tf.float32)
         # [n, d1]
         # change this to divide by the number nonzero rather than reduce mean
-        incoming_messages = tf.reduce_mean(transformed_node_embeds, axis=1)
+        incoming_messages = tf.reduce_sum(transformed_node_embeds, axis=1) / num_nonzero
         # [n, d1]
         output_embeds = self.rnn_cell(incoming_messages, target_embeds)[1]
         return output_embeds

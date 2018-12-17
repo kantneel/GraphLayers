@@ -57,15 +57,13 @@ class ExperimentParams(object):
 
 
 class GraphNetworkPlaceholders(object):
-    def __init__(self, input_node_embeds, num_graphs, adjacency_lists,
-                 in_degrees, node_labels, graph_nodes_list, targets,
-                 sorted_messages):
+    def __init__(self, input_node_embeds, num_graphs, sorted_messages,
+                 in_degree_indices, node_labels, graph_nodes_list, targets):
 
         # to be used at every typical layer
         self.input_node_embeds = input_node_embeds
         self.node_labels = node_labels
-        self.adjacency_lists = adjacency_lists
-        self.in_degrees = in_degrees,
+        self.in_degree_indices = in_degree_indices,
         self.sorted_messages = sorted_messages
 
         # to be used by only some layers or the output

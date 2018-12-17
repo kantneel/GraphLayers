@@ -111,7 +111,7 @@ class DataProcessor(object):
     def make_minibatch_iterator(self):
         """Create minibatches by flattening adjacency matrices into a single adjacency matrix with
         multiple disconnected components."""
-        dataset = self.load_data(use_memory=True)
+        dataset = self.load_data()
         if self.is_training_data:
             if isinstance(dataset, IndexedFileReader):
                 dataset.shuffle()
@@ -168,7 +168,7 @@ class DataProcessor(object):
                     in_degrees[row[1]] += 1
 
             concat_messages = np.concatenate(all_messages, 0)
-            sorted_messages = concat_messages[np.argsort(-concat_messages[:, 1])]
+            sorted_messages = concat_messages[np.argsort(concat_messages[:, 1])]
 
             in_degree_indices = np.zeros((sum(in_degrees), 2))
             message_num = 0

@@ -1,8 +1,6 @@
-from framework.model.base_network import GraphNetwork
+from framework.model.network import GraphNetwork
 from framework.model.layer import GraphLayer
 from examples.gated_gnn import GatedLayer
-from examples.graph_pool import PoolingLayer
-from examples.output_layers import DenseOutputLayer
 from examples.basic_dense import BasicDenseLayer
 from framework.utils.paramspaces import GraphNetworkParams, GraphLayerParams, \
     GraphNetworkPlaceholders, ExperimentParams
@@ -35,7 +33,7 @@ placeholders = GraphNetworkPlaceholders(
     node_labels=p['node_labels'],
     num_graphs=p['num_graphs'],
     graph_nodes_list=p['graph_nodes_list'],
-    in_degrees=p['in_degree_indices'],
+    in_degree_indices=p['in_degree_indices'],
     targets=p['target_values'],
     sorted_messages=p['sorted_messages']
 )

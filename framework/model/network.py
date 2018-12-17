@@ -152,6 +152,7 @@ class GraphNetwork(object):
                 layer_input_args.append(current_node_embeds)
                 current_node_embeds = layer(*layer_input_args)
 
+        current_node_embeds = tf.layers.dense(current_node_embeds, 100)
         current_node_embeds = tf.layers.dense(current_node_embeds,
                                               self.train_data_processor.num_classes)
         # Pooling the nodes for each graph. I suppose customizing
