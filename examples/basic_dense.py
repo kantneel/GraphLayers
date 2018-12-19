@@ -21,8 +21,19 @@ class BasicDenseLayer(GraphLayer):
                 activation=self.activation,
                 name='layer')
 
-    def __call__(self, layer_input_embeds):
-        summed_messages = tf.reduce_sum(layer_input_embeds, axis=1)
-        transformed_messages = self.dense_layer(summed_messages)
+    def create_node_label_embeds(self):
+        self.create_default_node_label_embeds()
 
+    def create_edge_label_embeds(self):
+        self.create_default_edge_label_embeds()
+
+    def __call__(self, layer_inputs, current_node_embeds):
+        sparse_node_embeds = self.get_node_embeds_from_sparse_inputs(
+            layer_inputs, current_node_embeds)
+
+        dense_node_embeds = tf.sparse.to_dense(sparse_node_embeds)
+        dense_summed_messages = tf.reduce_sum(
+            dense_node_embeds, axis=1)
+
+        transformed_messages = self.dense_layer(dense_summed_messages)
         return transformed_messages

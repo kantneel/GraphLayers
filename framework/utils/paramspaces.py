@@ -9,8 +9,8 @@ class GraphNetworkParams(object):
 
 
 class GraphLayerParams(object):
-    def __init__(self, node_embed_size, node_label_embed_size=None,
-                edge_label_embed_size=None, output_embed_size=None):
+    def __init__(self, node_embed_size, node_label_embed_size=1,
+                edge_label_embed_size=1, output_embed_size=None):
         self.node_embed_size = node_embed_size
         self.node_label_embed_size = node_label_embed_size
         self.edge_label_embed_size = edge_label_embed_size

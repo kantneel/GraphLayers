@@ -76,7 +76,7 @@ class GraphNetwork(object):
         sorted_embed_messages = tf.transpose(tf.gather(
             tf.transpose(sorted_messages), [0, 2, 3]))
         #sorted_embed_messages = sorted_messages[:, [0, 2, 3]]
-        max_degree = tf.reduce_max(self.placeholders.in_degree_indices[:, 1])
+        max_degree = tf.reduce_max(self.placeholders.in_degree_indices[:, 1]) + 1
         # scatter into [n, k, 3] where we have [n, k, 1] * num_nodes,
         # scatter options
         argv = []
@@ -97,7 +97,30 @@ class GraphNetwork(object):
             # now messages_by_source_tensor has ids in correct positions
             # and ids which correspond to zero embeddings elsewhere
             messages_by_source_only += filler_tensor
-            argv.append(messages_by_source_only)
+
+            # [m * 3, 2]
+            tiled_in_degree_indices = tf.contrib.seq2seq.tile_batch(
+                self.placeholders.in_degree_indices, 3)
+
+            # [m * 3]
+            reshaped_messages = tf.reshape(sorted_embed_messages, [-1])
+            message_range = tf.range(3)
+            # [m * 3, 1]
+            tiled_message_range = tf.tile(message_range, [tf.shape(self.placeholders.in_degree_indices)[0]])
+            tiled_message_range = tf.expand_dims(tiled_message_range, 1)
+
+            # [m * 3, 3]
+            sparse_indices = tf.concat([tiled_in_degree_indices,
+                                        tiled_message_range], axis=1)
+
+            shape = tf.cast(tf.shape(filler_tensor), tf.int64)
+            sparse_messages_by_source_only = tf.SparseTensor(
+                indices=tf.cast(sparse_indices, tf.int64),
+                values=reshaped_messages,
+                dense_shape=shape)
+
+            #argv.append(messages_by_source_only)
+            argv.append(sparse_messages_by_source_only)
 
         if config.source_node_labels:
             # also split by source node label
