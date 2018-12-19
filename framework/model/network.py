@@ -111,7 +111,7 @@ class GraphNetwork(object):
             sparse_messages_by_edge_label = get_specific_message_tensor(
                 starting_indices, 'edge_labels')
 
-            argv.append(messages_by_edge_label)
+            argv.append(sparse_messages_by_edge_label)
 
         return argv
 

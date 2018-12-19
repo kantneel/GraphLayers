@@ -50,6 +50,7 @@ class GraphLayer(ABC):
         """
         assuming layer_inputs is sparse
         """
+        layer_inputs = tf.sparse.reorder(layer_inputs)
         dense_layer_inputs = tf.sparse.to_dense(layer_inputs)
         id_indices = ['nodes', 'node_labels', 'edge_labels']
         if id_type not in id_indices:
@@ -128,6 +129,7 @@ class GraphLayer(ABC):
         new_dense_shape = sparse_node_ids.shape.as_list() + [self.layer_params.node_embed_size]
         new_dense_shape = [tf.shape(sparse_node_ids)[0],
                            tf.shape(sparse_node_ids)[1],
+                           tf.shape(sparse_node_ids)[2],
                            self.layer_params.node_embed_size]
         sparse_embeds_tensor = tf.SparseTensor(indices=tf.cast(new_sparse_indices, tf.int64),
                                                values=reshaped_embeds,

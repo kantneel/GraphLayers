@@ -66,25 +66,59 @@ class GatedLayer(GraphLayer):
         # input: [num_edge_labels, n, k, 3], [n, d1]
 
         # [num_edge_labels, n, k, d1]
-        node_embeds = self.get_node_embeds_from_inputs(layer_input_embeds, target_embeds,
-                                                       extra_dim=True)
-        # self.edge_weights - [num_edge_labels, d1, d1]
-        # [num_edge_labels, n, k, d1]
-        transformed_node_embeds = tf.einsum('enkd,eod->enko', node_embeds, self.edge_weights)
-        mask = 1 - tf.cast(tf.equal(transformed_node_embeds, 0), tf.float32)
-        # [num_edge_labels, 1, 1, d1]
-        edge_biases = tf.expand_dims(tf.expand_dims(self.edge_biases, 1), 1)
-        edge_biases *= mask
+        node_embeds = self.get_node_embeds_from_sparse_inputs(
+            layer_input_embeds, target_embeds, extra_dim=True)
 
-        transformed_node_embeds += edge_biases
-        # [n, k, d1]
-        transformed_node_embeds = tf.reduce_sum(transformed_node_embeds, axis=0)
+        split_node_embeds = tf.sparse_split(
+            sp_input=node_embeds,
+            num_split=self.network_params.num_edge_labels,
+            axis=0)
 
-        #num_nonzero = tf.reduce_sum(tf.cast(transformed_node_embeds[:, :, 0], tf.bool), axis=1)
-        num_nonzero = tf.cast(tf.count_nonzero(transformed_node_embeds[:, :, 0], axis=1, keep_dims=True), tf.float32)
+        transformed_sparse_messages = []
+        for edge_idx, split_embed in enumerate(split_node_embeds):
+            reshaped_embed = tf.sparse_reshape(
+                sp_input=split_embed,
+                shape=[-1, self.layer_params.node_embed_size])
+
+            transformed_embeds = tf.sparse.matmul(
+                sp_a=reshaped_embed,
+                b=self.edge_weights[edge_idx])
+
+            indices = tf.cast(tf.where(tf.not_equal(transformed_embeds, 0)), tf.int64)
+            values = tf.gather_nd(transformed_embeds, indices)
+            dense_shape = tf.shape(transformed_embeds, out_type=tf.int64)
+
+            sparse_transformed = tf.SparseTensor(indices=indices, values=values,
+                                                 dense_shape=dense_shape)
+            edge_bias = self.edge_biases[edge_idx]
+            tiled_edge_bias = tf.tile(edge_bias, [tf.size(values) / tf.size(edge_bias)])
+
+            sparse_bias = tf.SparseTensor(indices=indices, values=tiled_edge_bias,
+                                          dense_shape=dense_shape)
+
+            sparse_transformed = tf.sparse_add(
+                sparse_transformed, sparse_bias, thresh=1e-5)
+
+            sparse_transformed_reshaped = tf.sparse_reshape(
+                sp_input=sparse_transformed,
+                shape=split_embed.dense_shape)
+
+            transformed_sparse_messages.append(sparse_transformed_reshaped)
+
+        concat_sparse_messages = tf.sparse_concat(
+            axis=0, sp_inputs=transformed_sparse_messages)
+
+        summed_to_get_num_incoming_edges = tf.sparse.reduce_sum(
+            sp_input=concat_sparse_messages, axis=[0, 3])
+
+        num_nonzero = tf.cast(tf.count_nonzero(
+            summed_to_get_num_incoming_edges, axis=1, keep_dims=True), tf.float32)
         # [n, d1]
         # change this to divide by the number nonzero rather than reduce mean
-        incoming_messages = tf.reduce_sum(transformed_node_embeds, axis=1) / num_nonzero
+        incoming_messages = tf.sparse.reduce_sum(
+            sp_input=concat_sparse_messages, axis=[0, 2]) / num_nonzero
+
+        incoming_messages = tf.reshape(incoming_messages, [-1, self.layer_params.node_embed_size])
         # [n, d1]
         output_embeds = self.rnn_cell(incoming_messages, target_embeds)[1]
         return output_embeds
