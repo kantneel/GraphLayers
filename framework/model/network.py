@@ -28,44 +28,6 @@ class GraphNetwork(object):
         self.layers.append(new_layer)
         # check that layer properties are compatible
 
-    def get_filler_tensor(self, input_split_type, max_degree,
-                          mask_indices, mask_update_shape):
-        net_p = self.network_params
-        num_nodes = tf.size(self.placeholders.node_labels)
-        split_to_shape = {
-            'nodes'       : [num_nodes,
-                             max_degree, 1],
-            'node_labels' : [net_p.num_node_labels,
-                             num_nodes,
-                             max_degree, 1],
-            'edge_labels' : [net_p.num_edge_labels,
-                             num_nodes,
-                             max_degree, 1]
-        }
-        if input_split_type not in split_to_shape.keys():
-            raise Exception("arg input_split_type must be one of 'nodes', \
-                            'node_labels' or 'edge_labels'")
-
-        filler_tensor_shape = split_to_shape[input_split_type]
-        fill_values = [num_nodes, net_p.num_node_labels, net_p.num_edge_labels]
-        blank_tensors = []
-        for val in fill_values:
-            blank_tensors.append(tf.fill(filler_tensor_shape, val))
-
-        filler_tensor = tf.concat(blank_tensors, axis=-1)
-
-        # modify this shape for use in mask creation
-        mask_tensor_shape = filler_tensor_shape[:-1] + [3]
-        filler_mask = tf.scatter_nd(
-            indices=mask_indices,
-            updates=tf.ones(mask_update_shape),
-            shape=mask_tensor_shape)
-
-        # now filler_tensor is zero where updates will be applied
-        # and equal to num_nodes/num_node_labels/num_edge_labels elsewhere
-        filler_tensor = filler_tensor * tf.cast(tf.equal(filler_mask, 0), tf.int32)
-        return filler_tensor
-
     def get_messages(self, layer):
         """
         Takes in a layer and returns the types of messages that the layer
@@ -77,91 +39,78 @@ class GraphNetwork(object):
             tf.transpose(sorted_messages), [0, 2, 3]))
         #sorted_embed_messages = sorted_messages[:, [0, 2, 3]]
         max_degree = tf.reduce_max(self.placeholders.in_degree_indices[:, 1]) + 1
-        # scatter into [n, k, 3] where we have [n, k, 1] * num_nodes,
+
+        net_p = self.network_params
+        num_nodes = tf.size(self.placeholders.node_labels)
+        split_to_shape = {
+            'nodes'       : [num_nodes,
+                             max_degree, 3],
+            'node_labels' : [net_p.num_node_labels,
+                             num_nodes,
+                             max_degree, 3],
+            'edge_labels' : [net_p.num_edge_labels,
+                             num_nodes,
+                             max_degree, 3]
+        }
         # scatter options
         argv = []
         config = layer.get_input_config()
-        if config.source_only:
-            # just split by source node
-            # shape: [n, k, 3]
-            filler_tensor = self.get_filler_tensor(
-                input_split_type='nodes',
-                max_degree=max_degree,
-                mask_indices=self.placeholders.in_degree_indices,
-                mask_update_shape=tf.shape(sorted_embed_messages))
+        num_messages = tf.shape(self.placeholders.in_degree_indices)[0]
 
-            messages_by_source_only = tf.scatter_nd(
-                indices=self.placeholders.in_degree_indices,
-                updates=sorted_embed_messages,
-                shape=tf.shape(filler_tensor))
-            # now messages_by_source_tensor has ids in correct positions
-            # and ids which correspond to zero embeddings elsewhere
-            messages_by_source_only += filler_tensor
-
-            # [m * 3, 2]
-            tiled_in_degree_indices = tf.contrib.seq2seq.tile_batch(
-                self.placeholders.in_degree_indices, 3)
+        def get_specific_message_tensor(starting_indices, split_type):
+            # [m * 3, 2 or 3]
+            tiled_starting_indices = tf.contrib.seq2seq.tile_batch(
+                starting_indices, 3)
 
             # [m * 3]
             reshaped_messages = tf.reshape(sorted_embed_messages, [-1])
             message_range = tf.range(3)
             # [m * 3, 1]
-            tiled_message_range = tf.tile(message_range, [tf.shape(self.placeholders.in_degree_indices)[0]])
+            tiled_message_range = tf.tile(message_range, [num_messages])
             tiled_message_range = tf.expand_dims(tiled_message_range, 1)
 
-            # [m * 3, 3]
-            sparse_indices = tf.concat([tiled_in_degree_indices,
+            # [m * 3, 3 or 4]
+            sparse_indices = tf.concat([tiled_starting_indices,
                                         tiled_message_range], axis=1)
 
-            shape = tf.cast(tf.shape(filler_tensor), tf.int64)
-            sparse_messages_by_source_only = tf.SparseTensor(
+            sparse_messages = tf.SparseTensor(
                 indices=tf.cast(sparse_indices, tf.int64),
                 values=reshaped_messages,
-                dense_shape=shape)
+                dense_shape=split_to_shape[split_type])
 
-            #argv.append(messages_by_source_only)
+            return sparse_messages
+
+        if config.source_only:
+            # just split by source node
+            # shape: [n, k, 3]
+            starting_indices = self.placeholders.in_degree_indices
+            sparse_messages_by_source_only = get_specific_message_tensor(
+                starting_indices, 'nodes')
+
             argv.append(sparse_messages_by_source_only)
 
         if config.source_node_labels:
             # also split by source node label
             # shape: [num_node_labels, n, k, 3]
             source_node_labels = tf.expand_dims(sorted_messages[:, 2], axis=1)
-            split_by_label_indices = tf.concat(
+            starting_indices = tf.concat(
                 [source_node_labels, self.placeholders.in_degree_indices], axis=1)
 
-            filler_tensor = self.get_filler_tensor(
-                input_split_type='node_labels',
-                max_degree=max_degree,
-                mask_indices=split_by_label_indices,
-                mask_update_shape=tf.shape(sorted_embed_messages))
+            sparse_messages_by_source_label = get_specific_message_tensor(
+                starting_indices, 'node_labels')
 
-            messages_by_source_label = tf.scatter_nd(
-                indices=split_by_label_indices,
-                updates=sorted_embed_messages,
-                shape=tf.shape(filler_tensor))
-
-            messages_by_source_label += filler_tensor
-            argv.append(messages_by_source_label)
+            argv.append(sparse_messages_by_source_label)
 
         if config.edge_labels:
             # also split by edge label
             # shape: [num_edge_labels, n, k, 3]
             edge_labels = tf.expand_dims(sorted_messages[:, 3], axis=1)
-            split_by_label_indices = tf.concat(
+            starting_indices = tf.concat(
                 [edge_labels, self.placeholders.in_degree_indices], axis=1)
 
-            filler_tensor = self.get_filler_tensor(
-                input_split_type='edge_labels',
-                max_degree=max_degree,
-                mask_indices=split_by_label_indices,
-                mask_update_shape=tf.shape(sorted_embed_messages))
+            sparse_messages_by_edge_label = get_specific_message_tensor(
+                starting_indices, 'edge_labels')
 
-            messages_by_edge_label = tf.scatter_nd(
-                indices=split_by_label_indices,
-                updates=sorted_embed_messages,
-                shape=tf.shape(filler_tensor))
-
-            messages_by_edge_label += filler_tensor
             argv.append(messages_by_edge_label)
 
         return argv
