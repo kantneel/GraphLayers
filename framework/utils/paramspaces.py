@@ -26,9 +26,8 @@ class GraphLayerParams(object):
 class ExperimentParams(object):
     def __init__(self,
                  lr=0.001,
-                 num_epochs=500,
+                 num_epochs=100,
                  patience=25,
-                 analysis=False,
                  label_mapping=None,
                  wdir=None,
                  top_k=1,
@@ -39,7 +38,6 @@ class ExperimentParams(object):
         self.lr = lr
         self.num_epochs = num_epochs
         self.patience = patience
-        self.analysis = analysis
         self.label_mapping = label_mapping
         self.wdir = wdir
         self.top_k = top_k

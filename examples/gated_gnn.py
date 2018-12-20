@@ -84,20 +84,22 @@ class GatedLayer(GraphLayer):
                 sp_a=reshaped_embed,
                 b=self.edge_weights[edge_idx])
 
+
             indices = tf.cast(tf.where(tf.not_equal(transformed_embeds, 0)), tf.int64)
             values = tf.gather_nd(transformed_embeds, indices)
             dense_shape = tf.shape(transformed_embeds, out_type=tf.int64)
 
             sparse_transformed = tf.SparseTensor(indices=indices, values=values,
                                                  dense_shape=dense_shape)
-            edge_bias = self.edge_biases[edge_idx]
-            tiled_edge_bias = tf.tile(edge_bias, [tf.size(values) / tf.size(edge_bias)])
 
-            sparse_bias = tf.SparseTensor(indices=indices, values=tiled_edge_bias,
-                                          dense_shape=dense_shape)
+            #edge_bias = self.edge_biases[edge_idx] + 1e-4
+            #tiled_edge_bias = tf.tile(edge_bias, [tf.round(tf.size(values) / tf.size(edge_bias))])
 
-            sparse_transformed = tf.sparse_add(
-                sparse_transformed, sparse_bias, thresh=1e-5)
+            #sparse_bias = tf.SparseTensor(indices=indices, values=tiled_edge_bias,
+            #                              dense_shape=dense_shape)
+
+            #sparse_transformed = tf.sparse_add(
+            #    sparse_transformed, sparse_bias, thresh=1e-6)
 
             sparse_transformed_reshaped = tf.sparse_reshape(
                 sp_input=sparse_transformed,
@@ -111,8 +113,8 @@ class GatedLayer(GraphLayer):
         summed_to_get_num_incoming_edges = tf.sparse.reduce_sum(
             sp_input=concat_sparse_messages, axis=[0, 3])
 
-        num_nonzero = tf.cast(tf.count_nonzero(
-            summed_to_get_num_incoming_edges, axis=1, keep_dims=True), tf.float32)
+        num_nonzero = tf.cast(tf.reduce_any(
+            tf.abs(summed_to_get_num_incoming_edges) > 1e-6, axis=1, keepdims=True), tf.float32)
         # [n, d1]
         # change this to divide by the number nonzero rather than reduce mean
         incoming_messages = tf.sparse.reduce_sum(

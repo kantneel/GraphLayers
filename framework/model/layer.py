@@ -107,23 +107,24 @@ class GraphLayer(ABC):
                                       ids=edge_label_ids)
 
     def get_node_embeds_from_sparse_inputs(self, layer_inputs, node_embeds, extra_dim=False):
-        # sparse ids - indices are [V, 2], values are scalars
-        sparse_node_ids = self._get_ids_from_inputs_sparse(layer_inputs, id_type='nodes', extra_dim=extra_dim)
+        # sparse ids - indices are [m, 2], values are scalars
+        sparse_node_ids = self._get_ids_from_inputs_sparse(
+            layer_inputs, id_type='nodes', extra_dim=extra_dim)
 
-        # with V values, embeds is shape [V, d]
-        embeds = tf.nn.embedding_lookup(params=node_embeds,
-                                        ids=sparse_node_ids.values)
-        # [V * d]
+        # [m, d]
+        embeds = tf.nn.embedding_lookup(
+            params=node_embeds, ids=sparse_node_ids.values)
+        # [m * d]
         reshaped_embeds = tf.reshape(embeds, [-1])
-        # [V * d, 2]
+        # [m * d, 2]
         tiled_indices = tf.contrib.seq2seq.tile_batch(
             sparse_node_ids.indices, self.layer_params.node_embed_size)
 
         embed_range = tf.range(self.layer_params.node_embed_size)
-        # [V * d, 1]
+        # [m * d, 1]
         tiled_embed_range = tf.tile(embed_range, [tf.shape(sparse_node_ids.indices)[0]])
         tiled_embed_range = tf.expand_dims(tiled_embed_range, 1)
-        # [V * d, 3]
+        # [m * d, 3]
         new_sparse_indices = tf.concat([tf.cast(tiled_indices, tf.int32), tiled_embed_range], axis=1)
 
         new_dense_shape = sparse_node_ids.shape.as_list() + [self.layer_params.node_embed_size]
