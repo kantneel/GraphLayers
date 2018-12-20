@@ -7,7 +7,6 @@ import numpy as np
 import tensorflow as tf
 from framework.utils.io import IndexedFileReader, IndexedFileWriter
 
-
 class DataProcessor(object):
     def __init__(self, path, batch_size, node_embed_size, tie_fwd_bkwd=True,
                  is_training_data=False, run_prelim_pass=True):

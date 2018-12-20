@@ -32,7 +32,7 @@ class ExperimentParams(object):
                  wdir=None,
                  top_k=1,
                  mode='train',
-                 model=None,
+                 restore=None,
                  clamp_grad_norm=1,
                  rng=2018):
         self.lr = lr
@@ -42,7 +42,7 @@ class ExperimentParams(object):
         self.wdir = wdir
         self.top_k = top_k
         self.mode = mode
-        self.model = model
+        self.restore = restore
         self.clamp_grad_norm = clamp_grad_norm
         self.rng = rng
 

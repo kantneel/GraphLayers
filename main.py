@@ -18,6 +18,8 @@ if __name__ == "__main__":
     parser.add_argument('--clamp-grad-norm', type=float, default=1.)
     parser.add_argument('--rng', type=int, default=2018)
     parser.add_argument('--learning-rate', type=float, default=1e-3)
+    parser.add_argument('--restore', type=str, default=None,
+                        help='path to model to restore')
     parser.add_argument('--train-path', type=str, default=None,
                         help='relative path to training dataset created with IndexedFileWriter')
     parser.add_argument('--valid-path', type=str, default=None,
@@ -47,7 +49,8 @@ if __name__ == "__main__":
     experiment_params = ExperimentParams(
         num_epochs=args.num_epochs, lr=args.learning_rate,
         patience=args.patience, wdir=args.wdir, top_k=args.top_k,
-        clamp_grad_norm=args.clamp_grad_norm, rng=args.rng)
+        clamp_grad_norm=args.clamp_grad_norm, rng=args.rng,
+        restore=args.restore)
 
     net = GraphNetwork(network_params, layer_params, experiment_params,
                        train_data_processor=train_data_processor,

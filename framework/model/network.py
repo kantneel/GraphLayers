@@ -177,8 +177,6 @@ class GraphNetwork(object):
         config.gpu_options.allow_growth = True
         self.graph = tf.Graph()
         self.sess = tf.Session(graph=self.graph, config=config)
-        #from tensorflow.python import debug as tf_debug
-        #self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
         with self.graph.as_default():
             self.make_model()
             if mode == 'training':
@@ -195,9 +193,6 @@ class GraphNetwork(object):
         self.sess.run(init_op)
 
     def restore_model(self, path):
-        debug = self.args.get('debug', False)
-        if debug:
-            print("Restoring weights from file %s." % path)
         with open(path, 'rb') as in_file:
             data_to_load = pickle.load(in_file)
 
@@ -208,18 +203,9 @@ class GraphNetwork(object):
             for variable in self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
                 used_vars.add(variable.name)
                 if variable.name in data_to_load['weights']:
-                    if debug:
-                        print("Restoring weights for %s" % variable.name)
                     restore_ops.append(variable.assign(data_to_load['weights'][variable.name]))
                 else:
-                    if debug:
-                        print('Freshly initializing %s since no saved value was found.' % variable.name)
                     variables_to_initialize.append(variable)
-
-            if debug:
-                for var_name in data_to_load['weights']:
-                    if var_name not in used_vars:
-                        print('Saved weights for %s not used by model.' % var_name)
 
             restore_ops.append(tf.variables_initializer(variables_to_initialize))
             self.model.sess.run(restore_ops)
@@ -239,16 +225,6 @@ class GraphNetwork(object):
 
     def make_train_step(self):
         trainable_vars = self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-        #if False:
-        #    graph_vars = set(self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="graph_model"))
-        #    filtered_vars = []
-        #    for var in trainable_vars:
-        #        if var not in graph_vars:
-        #            filtered_vars.append(var)
-        #        else:
-        #            print("Freezing weights of variable %s." % var.name)
-        #    trainable_vars = filtered_vars
-
         optimizer = tf.train.AdamOptimizer(self.exp_params.lr)
         grads_and_vars = optimizer.compute_gradients(self.ops['loss'], var_list=trainable_vars)
         clipped_grads = []
@@ -259,7 +235,6 @@ class GraphNetwork(object):
                 clipped_grads.append((grad, var))
 
         self.ops['train_step'] = optimizer.apply_gradients(clipped_grads)
-
         # Initialize newly-introduced variables:
         self.sess.run(tf.local_variables_initializer())
 
@@ -267,13 +242,13 @@ class GraphNetwork(object):
         log_to_save = []
         total_time_start = time.time()
         with self.graph.as_default():
-            #if self.exp_params.get('restore', None) is not None:
-            #    _, valid_acc, _ = self.run_train_epoch("Resumed (validation)", valid_data, False)
-            #    best_val_acc = valid_acc
-            #    best_val_acc_epoch = 0
-            #    print("\r\x1b[KResumed operation, initial cum. val. acc: %.5f" % best_val_acc)
-            #else:
-            (best_val_acc, best_val_acc_epoch) = (0.0, 0)
+            if self.exp_params.restore is not None:
+                _, valid_acc, _ = self.run_train_epoch("Resumed (validation)", valid_data, False)
+                best_val_acc = valid_acc
+                best_val_acc_epoch = 0
+                print("\r\x1b[KResumed operation, initial cum. val. acc: %.5f" % best_val_acc)
+            else:
+                (best_val_acc, best_val_acc_epoch) = (0.0, 0)
 
             # this will be undone in the first epoch
             for epoch in range(1, self.exp_params.num_epochs + 1):
