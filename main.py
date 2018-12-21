@@ -18,6 +18,8 @@ if __name__ == "__main__":
     parser.add_argument('--clamp-grad-norm', type=float, default=1.)
     parser.add_argument('--rng', type=int, default=2018)
     parser.add_argument('--learning-rate', type=float, default=1e-3)
+    parser.add_argument('--use-sparse', action='store_true',
+                        help='whether to use sparse tensors')
     parser.add_argument('--restore', type=str, default=None,
                         help='path to model to restore')
     parser.add_argument('--train-path', type=str, default=None,
@@ -43,7 +45,8 @@ if __name__ == "__main__":
     network_params = GraphNetworkParams(
         num_nodes=args.batch_size,
         num_node_labels=train_data_processor.num_node_labels,
-        num_edge_labels=train_data_processor.num_edge_labels)
+        num_edge_labels=train_data_processor.num_edge_labels,
+        use_sparse=args.use_sparse)
 
     # define parameters that are used for governing the experiment
     experiment_params = ExperimentParams(

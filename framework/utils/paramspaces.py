@@ -1,8 +1,10 @@
 class GraphNetworkParams(object):
-    def __init__(self, num_nodes, num_node_labels=1, num_edge_labels=1):
+    def __init__(self, num_nodes, num_node_labels=1, num_edge_labels=1,
+                 use_sparse=False):
         self.num_nodes = num_nodes
         self.num_node_labels = num_node_labels
         self.num_edge_labels = num_edge_labels
+        self.use_sparse = use_sparse
 
     def check_valid_args(self, args):
         pass
@@ -21,7 +23,6 @@ class GraphLayerParams(object):
 
     def check_valid_args(self, args):
         pass
-
 
 class ExperimentParams(object):
     def __init__(self,
