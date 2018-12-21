@@ -28,10 +28,10 @@ class GraphNetwork(object):
         self.layers.append(new_layer)
         # check that layer properties are compatible
 
-    def get_messages(self, layer):
+    def get_messages(self, config):
         """
-        Takes in a layer and returns the types of messages that the layer
-        needs for input based on the layer's InputConfig
+        Takes in an InputConfig and returns the types of messages that the layer
+        needs for input.
         """
         sorted_messages = self.placeholders.sorted_messages
         # Indices [0, 2, 3] correspond to source, source label and edge label ids
@@ -54,10 +54,20 @@ class GraphNetwork(object):
         }
         # scatter options
         argv = []
-        config = layer.get_input_config()
         num_messages = tf.shape(self.placeholders.in_degree_indices)[0]
 
         def get_specific_message_tensor(starting_indices, split_type):
+            """
+            Args:
+            - starting_indices: tensor of shape [(E), M, 2] whose rows indicate
+            the target node and edge number (0, ..., in-degree-1)
+            - split_type: one of 'nodes', 'node_labels', 'edge_labels'
+            which indicates the size of the resulting sparse tensor
+
+            Returns:
+            - sparse_messages: a SparseTensor which contains messages
+            separated by target node and extra dimension.
+            """
             # [m * 3, 2 or 3]
             tiled_starting_indices = tf.contrib.seq2seq.tile_batch(
                 starting_indices, 3)
@@ -115,6 +125,20 @@ class GraphNetwork(object):
 
         return argv
 
+    def get_logits(self, final_node_embeds):
+        """Apply 2 dense layers and reduce by graph to get logits for batch"""
+        transformed = tf.layers.dense(final_node_embeds, 100, activation=tf.nn.relu)
+        mlp_out = tf.layers.dense(transformed, self.train_data_processor.num_classes)
+
+        # Pooling the nodes for each graph. I suppose customizing
+        # this will be a feature of the GraphNetwork class.
+        logits = tf.unsorted_segment_sum(
+            data=mlp_out,
+            segment_ids=self.placeholders.graph_nodes_list,
+            num_segments=self.placeholders.num_graphs)
+
+        return logits
+
     def make_model(self):
         """Create the tensorflow graph that encodes the network"""
         self.placeholders = self.define_placeholders()
@@ -125,21 +149,13 @@ class GraphNetwork(object):
             layer.create_weights()
             num_timesteps = getattr(layer, 'num_timesteps', 1)
             for i in range(num_timesteps):
-                layer_input_args = self.get_messages(layer)
+                # args are determined by Layer().get_input_config()
+                config = layer.get_input_config()
+                layer_input_args = self.get_messages(config)
                 layer_input_args.append(current_node_embeds)
                 current_node_embeds = layer(*layer_input_args)
 
-        # Applying two dense layers to get final node embeds
-        current_node_embeds = tf.layers.dense(current_node_embeds, 100,
-                                              activation=tf.nn.relu)
-        final_node_embeds = tf.layers.dense(current_node_embeds,
-                                              self.train_data_processor.num_classes)
-        # Pooling the nodes for each graph. I suppose customizing
-        # this will be a feature of the GraphNetwork class.
-        logits = tf.unsorted_segment_sum(
-            data=final_node_embeds,
-            segment_ids=self.placeholders.graph_nodes_list,
-            num_segments=self.placeholders.num_graphs)
+        logits = self.get_logits(current_node_embeds)
         labels = self.placeholders.targets
         loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                               labels=labels)

@@ -66,8 +66,8 @@ class GatedLayer(GraphLayer):
         # input: [num_edge_labels, n, k, 3], [n, d1]
 
         # [num_edge_labels, n, k, d1]
-        node_embeds = self.get_node_embeds_from_sparse_inputs(
-            layer_input_embeds, target_embeds, extra_dim=True)
+        node_embeds = self.get_node_embeds_from_inputs(
+            layer_input_embeds, target_embeds)
 
         split_node_embeds = tf.sparse_split(
             sp_input=node_embeds,
