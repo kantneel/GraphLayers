@@ -28,120 +28,154 @@ class GraphNetwork(object):
         self.layers.append(new_layer)
         # check that layer properties are compatible
 
-    def get_filler_tensor(self, input_split_type, max_degree,
-                          mask_indices, mask_update_shape):
-        net_p = self.network_params
-        num_nodes = tf.size(self.placeholders.node_labels)
-        split_to_shape = {
-            'nodes'       : [num_nodes,
-                             max_degree, 1],
-            'node_labels' : [net_p.num_node_labels,
-                             num_nodes,
-                             max_degree, 1],
-            'edge_labels' : [net_p.num_edge_labels,
-                             num_nodes,
-                             max_degree, 1]
-        }
-        if input_split_type not in split_to_shape.keys():
-            raise Exception("arg input_split_type must be one of 'nodes', \
-                            'node_labels' or 'edge_labels'")
-
-        filler_tensor_shape = split_to_shape[input_split_type]
-        fill_values = [num_nodes, net_p.num_node_labels, net_p.num_edge_labels]
-        blank_tensors = []
-        for val in fill_values:
-            blank_tensors.append(tf.fill(filler_tensor_shape, val))
-
-        filler_tensor = tf.concat(blank_tensors, axis=-1)
-
-        # modify this shape for use in mask creation
-        mask_tensor_shape = filler_tensor_shape[:-1] + [3]
-        filler_mask = tf.scatter_nd(
-            indices=mask_indices,
-            updates=tf.ones(mask_update_shape),
-            shape=mask_tensor_shape)
-
-        # now filler_tensor is zero where updates will be applied
-        # and equal to num_nodes/num_node_labels/num_edge_labels elsewhere
-        filler_tensor = filler_tensor * tf.cast(tf.equal(filler_mask, 0), tf.int32)
-        return filler_tensor
-
-    def get_messages(self, layer):
+    def get_messages(self, config):
         """
-        Takes in a layer and returns the types of messages that the layer
-        needs for input based on the layer's InputConfig
+        Takes in an InputConfig and returns the types of messages that the layer
+        needs for input.
         """
         sorted_messages = self.placeholders.sorted_messages
         # Indices [0, 2, 3] correspond to source, source label and edge label ids
         sorted_embed_messages = tf.transpose(tf.gather(
             tf.transpose(sorted_messages), [0, 2, 3]))
         #sorted_embed_messages = sorted_messages[:, [0, 2, 3]]
-        max_degree = tf.reduce_max(self.placeholders.in_degree_indices[:, 1])
-        # scatter into [n, k, 3] where we have [n, k, 1] * num_nodes,
+        max_degree = tf.reduce_max(self.placeholders.in_degree_indices[:, 1]) + 1
+
+        net_p = self.network_params
+        num_nodes = tf.size(self.placeholders.node_labels)
+        split_to_shape = {
+            'nodes'       : [num_nodes,
+                             max_degree, 3],
+            'node_labels' : [net_p.num_node_labels,
+                             num_nodes,
+                             max_degree, 3],
+            'edge_labels' : [net_p.num_edge_labels,
+                             num_nodes,
+                             max_degree, 3]
+        }
         # scatter options
         argv = []
-        config = layer.get_input_config()
-        if config.source_only:
-            # just split by source node
-            # shape: [n, k, 3]
-            filler_tensor = self.get_filler_tensor(
-                input_split_type='nodes',
-                max_degree=max_degree,
-                mask_indices=self.placeholders.in_degree_indices,
-                mask_update_shape=tf.shape(sorted_embed_messages))
+        num_messages = tf.shape(self.placeholders.in_degree_indices)[0]
 
-            messages_by_source_only = tf.scatter_nd(
-                indices=self.placeholders.in_degree_indices,
+        def get_specific_sparse_message_tensor(starting_indices, split_type):
+            """
+            Args:
+            - starting_indices: tensor of shape [(E), M, 2] whose rows indicate
+            the target node and edge number (0, ..., in-degree-1)
+            - split_type: one of 'nodes', 'node_labels', 'edge_labels'
+            which indicates the size of the resulting sparse tensor
+
+            Returns:
+            - sparse_messages: a SparseTensor which contains messages
+            separated by target node and extra dimension.
+            """
+            # [m * 3, 2 or 3]
+            tiled_starting_indices = tf.contrib.seq2seq.tile_batch(
+                starting_indices, 3)
+
+            # [m * 3]
+            reshaped_messages = tf.reshape(sorted_embed_messages, [-1])
+            message_range = tf.range(3)
+            # [m * 3, 1]
+            tiled_message_range = tf.tile(message_range, [num_messages])
+            tiled_message_range = tf.expand_dims(tiled_message_range, 1)
+
+            # [m * 3, 3 or 4]
+            sparse_indices = tf.concat([tiled_starting_indices,
+                                        tiled_message_range], axis=1)
+
+            sparse_messages = tf.SparseTensor(
+                indices=tf.cast(sparse_indices, tf.int64),
+                values=reshaped_messages,
+                dense_shape=split_to_shape[split_type])
+
+            return sparse_messages
+
+        def get_specific_dense_message_tensor(starting_indices, split_type):
+            """
+            Same args as get_specific_sparse_message_tensor, but the return
+            type is dense. To do this, we use a filler tensor to pad the ids so
+            that the fetched embeddings will be zeroed out appropriately.
+            """
+            mask_tensor_shape = split_to_shape[split_type]
+            filler_tensor_shape = mask_tensor_shape[:-1] + [1]
+            fill_values = [num_nodes, net_p.num_node_labels, net_p.num_edge_labels]
+            blank_tensors = []
+            for val in fill_values:
+                blank_tensors.append(tf.fill(filler_tensor_shape, val))
+
+            filler_tensor = tf.concat(blank_tensors, axis=-1)
+
+            # modify this shape for use in mask creation
+            filler_mask = tf.scatter_nd(
+                indices=starting_indices,
+                updates=tf.ones(tf.shape(sorted_embed_messages)),
+                shape=mask_tensor_shape)
+
+            # now filler_tensor is zero where updates will be applied
+            # and equal to num_nodes/num_node_labels/num_edge_labels elsewhere
+            filler_tensor = filler_tensor * tf.cast(tf.equal(filler_mask, 0), tf.int32)
+            dense_messages = tf.scatter_nd(
+                indices=starting_indices,
                 updates=sorted_embed_messages,
                 shape=tf.shape(filler_tensor))
             # now messages_by_source_tensor has ids in correct positions
             # and ids which correspond to zero embeddings elsewhere
-            messages_by_source_only += filler_tensor
+            dense_messages += filler_tensor
+            return dense_messages
+
+        if self.network_params.use_sparse:
+            get_message_function = get_specific_sparse_message_tensor
+        else:
+            get_message_function = get_specific_dense_message_tensor
+
+        if config.source_only:
+            # just split by source node
+            # shape: [n, k, 3]
+            starting_indices = self.placeholders.in_degree_indices
+            messages_by_source_only = get_message_function(
+                starting_indices, 'nodes')
+
             argv.append(messages_by_source_only)
 
         if config.source_node_labels:
             # also split by source node label
             # shape: [num_node_labels, n, k, 3]
             source_node_labels = tf.expand_dims(sorted_messages[:, 2], axis=1)
-            split_by_label_indices = tf.concat(
+            starting_indices = tf.concat(
                 [source_node_labels, self.placeholders.in_degree_indices], axis=1)
 
-            filler_tensor = self.get_filler_tensor(
-                input_split_type='node_labels',
-                max_degree=max_degree,
-                mask_indices=split_by_label_indices,
-                mask_update_shape=tf.shape(sorted_embed_messages))
+            messages_by_source_label = get_message_function(
+                starting_indices, 'node_labels')
 
-            messages_by_source_label = tf.scatter_nd(
-                indices=split_by_label_indices,
-                updates=sorted_embed_messages,
-                shape=tf.shape(filler_tensor))
-
-            messages_by_source_label += filler_tensor
             argv.append(messages_by_source_label)
 
         if config.edge_labels:
             # also split by edge label
             # shape: [num_edge_labels, n, k, 3]
             edge_labels = tf.expand_dims(sorted_messages[:, 3], axis=1)
-            split_by_label_indices = tf.concat(
+            starting_indices = tf.concat(
                 [edge_labels, self.placeholders.in_degree_indices], axis=1)
 
-            filler_tensor = self.get_filler_tensor(
-                input_split_type='edge_labels',
-                max_degree=max_degree,
-                mask_indices=split_by_label_indices,
-                mask_update_shape=tf.shape(sorted_embed_messages))
+            messages_by_edge_label = get_message_function(
+                starting_indices, 'edge_labels')
 
-            messages_by_edge_label = tf.scatter_nd(
-                indices=split_by_label_indices,
-                updates=sorted_embed_messages,
-                shape=tf.shape(filler_tensor))
-
-            messages_by_edge_label += filler_tensor
             argv.append(messages_by_edge_label)
 
         return argv
+
+    def get_logits(self, final_node_embeds):
+        """Apply 2 dense layers and reduce by graph to get logits for batch"""
+        transformed = tf.layers.dense(final_node_embeds, 100, activation=tf.nn.relu)
+        mlp_out = tf.layers.dense(transformed, self.train_data_processor.num_classes)
+
+        # Pooling the nodes for each graph. I suppose customizing
+        # this will be a feature of the GraphNetwork class.
+        logits = tf.unsorted_segment_sum(
+            data=mlp_out,
+            segment_ids=self.placeholders.graph_nodes_list,
+            num_segments=self.placeholders.num_graphs)
+
+        return logits
 
     def make_model(self):
         """Create the tensorflow graph that encodes the network"""
@@ -153,21 +187,13 @@ class GraphNetwork(object):
             layer.create_weights()
             num_timesteps = getattr(layer, 'num_timesteps', 1)
             for i in range(num_timesteps):
-                layer_input_args = self.get_messages(layer)
+                # args are determined by Layer().get_input_config()
+                config = layer.get_input_config()
+                layer_input_args = self.get_messages(config)
                 layer_input_args.append(current_node_embeds)
                 current_node_embeds = layer(*layer_input_args)
 
-        # Applying two dense layers to get final node embeds
-        current_node_embeds = tf.layers.dense(current_node_embeds, 100,
-                                              activation=tf.nn.relu)
-        final_node_embeds = tf.layers.dense(current_node_embeds,
-                                              self.train_data_processor.num_classes)
-        # Pooling the nodes for each graph. I suppose customizing
-        # this will be a feature of the GraphNetwork class.
-        logits = tf.unsorted_segment_sum(
-            data=final_node_embeds,
-            segment_ids=self.placeholders.graph_nodes_list,
-            num_segments=self.placeholders.num_graphs)
+        logits = self.get_logits(current_node_embeds)
         labels = self.placeholders.targets
         loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                               labels=labels)
@@ -205,8 +231,6 @@ class GraphNetwork(object):
         config.gpu_options.allow_growth = True
         self.graph = tf.Graph()
         self.sess = tf.Session(graph=self.graph, config=config)
-        #from tensorflow.python import debug as tf_debug
-        #self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
         with self.graph.as_default():
             self.make_model()
             if mode == 'training':
@@ -223,9 +247,6 @@ class GraphNetwork(object):
         self.sess.run(init_op)
 
     def restore_model(self, path):
-        debug = self.args.get('debug', False)
-        if debug:
-            print("Restoring weights from file %s." % path)
         with open(path, 'rb') as in_file:
             data_to_load = pickle.load(in_file)
 
@@ -236,18 +257,9 @@ class GraphNetwork(object):
             for variable in self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
                 used_vars.add(variable.name)
                 if variable.name in data_to_load['weights']:
-                    if debug:
-                        print("Restoring weights for %s" % variable.name)
                     restore_ops.append(variable.assign(data_to_load['weights'][variable.name]))
                 else:
-                    if debug:
-                        print('Freshly initializing %s since no saved value was found.' % variable.name)
                     variables_to_initialize.append(variable)
-
-            if debug:
-                for var_name in data_to_load['weights']:
-                    if var_name not in used_vars:
-                        print('Saved weights for %s not used by model.' % var_name)
 
             restore_ops.append(tf.variables_initializer(variables_to_initialize))
             self.model.sess.run(restore_ops)
@@ -267,16 +279,6 @@ class GraphNetwork(object):
 
     def make_train_step(self):
         trainable_vars = self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-        #if False:
-        #    graph_vars = set(self.sess.graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="graph_model"))
-        #    filtered_vars = []
-        #    for var in trainable_vars:
-        #        if var not in graph_vars:
-        #            filtered_vars.append(var)
-        #        else:
-        #            print("Freezing weights of variable %s." % var.name)
-        #    trainable_vars = filtered_vars
-
         optimizer = tf.train.AdamOptimizer(self.exp_params.lr)
         grads_and_vars = optimizer.compute_gradients(self.ops['loss'], var_list=trainable_vars)
         clipped_grads = []
@@ -287,7 +289,6 @@ class GraphNetwork(object):
                 clipped_grads.append((grad, var))
 
         self.ops['train_step'] = optimizer.apply_gradients(clipped_grads)
-
         # Initialize newly-introduced variables:
         self.sess.run(tf.local_variables_initializer())
 
@@ -295,13 +296,13 @@ class GraphNetwork(object):
         log_to_save = []
         total_time_start = time.time()
         with self.graph.as_default():
-            #if self.exp_params.get('restore', None) is not None:
-            #    _, valid_acc, _ = self.run_train_epoch("Resumed (validation)", valid_data, False)
-            #    best_val_acc = valid_acc
-            #    best_val_acc_epoch = 0
-            #    print("\r\x1b[KResumed operation, initial cum. val. acc: %.5f" % best_val_acc)
-            #else:
-            (best_val_acc, best_val_acc_epoch) = (0.0, 0)
+            if self.exp_params.restore is not None:
+                _, valid_acc, _ = self.run_train_epoch("Resumed (validation)", valid_data, False)
+                best_val_acc = valid_acc
+                best_val_acc_epoch = 0
+                print("\r\x1b[KResumed operation, initial cum. val. acc: %.5f" % best_val_acc)
+            else:
+                (best_val_acc, best_val_acc_epoch) = (0.0, 0)
 
             # this will be undone in the first epoch
             for epoch in range(1, self.exp_params.num_epochs + 1):

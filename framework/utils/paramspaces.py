@@ -1,16 +1,18 @@
 class GraphNetworkParams(object):
-    def __init__(self, num_nodes, num_node_labels=1, num_edge_labels=1):
+    def __init__(self, num_nodes, num_node_labels=1, num_edge_labels=1,
+                 use_sparse=False):
         self.num_nodes = num_nodes
         self.num_node_labels = num_node_labels
         self.num_edge_labels = num_edge_labels
+        self.use_sparse = use_sparse
 
     def check_valid_args(self, args):
         pass
 
 
 class GraphLayerParams(object):
-    def __init__(self, node_embed_size, node_label_embed_size=None,
-                edge_label_embed_size=None, output_embed_size=None):
+    def __init__(self, node_embed_size, node_label_embed_size=1,
+                edge_label_embed_size=1, output_embed_size=None):
         self.node_embed_size = node_embed_size
         self.node_label_embed_size = node_label_embed_size
         self.edge_label_embed_size = edge_label_embed_size
@@ -22,29 +24,26 @@ class GraphLayerParams(object):
     def check_valid_args(self, args):
         pass
 
-
 class ExperimentParams(object):
     def __init__(self,
                  lr=0.001,
-                 num_epochs=500,
+                 num_epochs=100,
                  patience=25,
-                 analysis=False,
                  label_mapping=None,
                  wdir=None,
                  top_k=1,
                  mode='train',
-                 model=None,
+                 restore=None,
                  clamp_grad_norm=1,
                  rng=2018):
         self.lr = lr
         self.num_epochs = num_epochs
         self.patience = patience
-        self.analysis = analysis
         self.label_mapping = label_mapping
         self.wdir = wdir
         self.top_k = top_k
         self.mode = mode
-        self.model = model
+        self.restore = restore
         self.clamp_grad_norm = clamp_grad_norm
         self.rng = rng
 

@@ -7,13 +7,12 @@ import numpy as np
 import tensorflow as tf
 from framework.utils.io import IndexedFileReader, IndexedFileWriter
 
-
 class DataProcessor(object):
-    def __init__(self, path, batch_size, layer_params, tie_fwd_bkwd=True,
+    def __init__(self, path, batch_size, node_embed_size, tie_fwd_bkwd=True,
                  is_training_data=False, run_prelim_pass=True):
         self.path = path
         self.batch_size = batch_size
-        self.layer_params = layer_params
+        self.node_embed_size = node_embed_size
         self.tie_fwd_bkwd = tie_fwd_bkwd
         self.is_training_data = is_training_data
 
@@ -34,41 +33,16 @@ class DataProcessor(object):
             self.num_node_labels = num_node_labels
             self.num_classes = num_classes
 
-            self.placeholders = self.define_placeholders()
-
     @classmethod
     def copy_params(cls, other, path, is_training_data):
         assert isinstance(other, DataProcessor)
-        instance = cls(path, other.batch_size, other.layer_params,
+        instance = cls(path, other.batch_size, other.node_embed_size,
                        other.tie_fwd_bkwd, is_training_data, run_prelim_pass=False)
         instance.num_edge_labels = other.num_edge_labels
         instance.num_node_labels = other.num_node_labels
         instance.num_classes = other.num_classes
-        instance.define_placeholders()
 
         return instance
-
-    def define_placeholders(self):
-        placeholders = {
-            'target_values' : tf.placeholder(tf.int32, [None], name='target_values'),
-            'num_graphs' : tf.placeholder(tf.int32, [], name='num_graphs'),
-            'graph_nodes_list' : tf.placeholder(tf.int32, [None], name='graph_nodes_list'),
-            'graph_state_keep_prob' : tf.placeholder(tf.float32, None, name='graph_state_keep_prob'),
-            'in_degree_indices' : tf.placeholder(tf.int32, [None, 2], name='in_degree_indices'),
-            'sorted_messages' : tf.placeholder(tf.int32, [None, 4], name='sorted_messages'),
-            'out_layer_dropout_keep_prob' : tf.placeholder(
-                tf.float32, [], name='out_layer_dropout_keep_prob'),
-            'input_node_embeds' : tf.placeholder(
-                tf.float32, [None, self.layer_params.node_embed_size], name='node_embeds'),
-            'node_labels' : tf.placeholder(
-                tf.float32, [None], name='node_labels'),
-            'adjacency_lists' : [tf.placeholder(
-                tf.int32, [None, 2], name='adjacency_e%s' % e) for e in range(self.num_edge_labels)],
-            'edge_weight_dropout_keep_prob' : tf.placeholder(
-                tf.float32, None, name='edge_weight_dropout_keep_prob')
-        }
-        return placeholders
-
 
     def load_data(self, use_memory=False, use_disk=False):
         reader = IndexedFileReader(self.path)
@@ -148,7 +122,7 @@ class DataProcessor(object):
                 padded_features = np.pad(cur_graph['init'],
                                          (
                                              (0, 0),
-                                             (0, self.layer_params.node_embed_size - self.num_node_labels)),
+                                             (0, self.node_embed_size - self.num_node_labels)),
                                          'constant')
                 batch_node_features.extend(padded_features)
                 batch_graph_nodes_list.append(
