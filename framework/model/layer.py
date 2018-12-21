@@ -105,6 +105,9 @@ class GraphLayer(ABC):
                 dense_shape=new_dense_shape)
         else:
             embed_dim = tf.shape(embeds)[1]
+            # we are assuming that the id tensor has filler values
+            # which have value equal to the highest id + 1. Those
+            # slots in the embeds will have zeros.
             embeds_with_zeros = tf.concat(
                 [embeds, tf.zeros([1, embed_dim])], axis=0)
             return_embeds = tf.nn.embedding_lookup(

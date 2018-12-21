@@ -63,6 +63,40 @@ class GatedLayer(GraphLayer):
         self.create_default_edge_label_embeds()
 
     def __call__(self, layer_input_embeds, target_embeds):
+        if self.network_params.use_sparse:
+            return self.call_sparse(layer_input_embeds, target_embeds)
+        else:
+            return self.call_dense(layer_input_embeds, target_embeds)
+
+
+    def call_dense(self, layer_input_embeds, target_embeds):
+        # input: [num_edge_labels, n, k, 3], [n, d1]
+
+        # [num_edge_labels, n, k, d1]
+        node_embeds = self.get_node_embeds_from_inputs(layer_input_embeds, target_embeds)
+
+        # self.edge_weights - [num_edge_labels, d1, d1]
+        # [num_edge_labels, n, k, d1]
+        transformed_node_embeds = tf.einsum('enkd,eod->enko', node_embeds, self.edge_weights)
+        mask = 1 - tf.cast(tf.equal(transformed_node_embeds, 0), tf.float32)
+        # [num_edge_labels, 1, 1, d1]
+        edge_biases = tf.expand_dims(tf.expand_dims(self.edge_biases, 1), 1)
+        edge_biases *= mask
+
+        transformed_node_embeds += edge_biases
+        # [n, k, d1]
+        transformed_node_embeds = tf.reduce_sum(transformed_node_embeds, axis=0)
+
+        #num_nonzero = tf.reduce_sum(tf.cast(transformed_node_embeds[:, :, 0], tf.bool), axis=1)
+        num_nonzero = tf.cast(tf.count_nonzero(transformed_node_embeds[:, :, 0], axis=1, keep_dims=True), tf.float32)
+        # [n, d1]
+        # change this to divide by the number nonzero rather than reduce mean
+        incoming_messages = tf.reduce_sum(transformed_node_embeds, axis=1) / num_nonzero
+        # [n, d1]
+        output_embeds = self.rnn_cell(incoming_messages, target_embeds)[1]
+        return output_embeds
+
+    def call_sparse(self, layer_input_embeds, target_embeds):
         # input: [num_edge_labels, n, k, 3], [n, d1]
 
         # [num_edge_labels, n, k, d1]

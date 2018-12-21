@@ -56,7 +56,7 @@ class GraphNetwork(object):
         argv = []
         num_messages = tf.shape(self.placeholders.in_degree_indices)[0]
 
-        def get_specific_message_tensor(starting_indices, split_type):
+        def get_specific_sparse_message_tensor(starting_indices, split_type):
             """
             Args:
             - starting_indices: tensor of shape [(E), M, 2] whose rows indicate
@@ -90,14 +90,52 @@ class GraphNetwork(object):
 
             return sparse_messages
 
+        def get_specific_dense_message_tensor(starting_indices, split_type):
+            """
+            Same args as get_specific_sparse_message_tensor, but the return
+            type is dense. To do this, we use a filler tensor to pad the ids so
+            that the fetched embeddings will be zeroed out appropriately.
+            """
+            mask_tensor_shape = split_to_shape[split_type]
+            filler_tensor_shape = mask_tensor_shape[:-1] + [1]
+            fill_values = [num_nodes, net_p.num_node_labels, net_p.num_edge_labels]
+            blank_tensors = []
+            for val in fill_values:
+                blank_tensors.append(tf.fill(filler_tensor_shape, val))
+
+            filler_tensor = tf.concat(blank_tensors, axis=-1)
+
+            # modify this shape for use in mask creation
+            filler_mask = tf.scatter_nd(
+                indices=starting_indices,
+                updates=tf.ones(tf.shape(sorted_embed_messages)),
+                shape=mask_tensor_shape)
+
+            # now filler_tensor is zero where updates will be applied
+            # and equal to num_nodes/num_node_labels/num_edge_labels elsewhere
+            filler_tensor = filler_tensor * tf.cast(tf.equal(filler_mask, 0), tf.int32)
+            dense_messages = tf.scatter_nd(
+                indices=starting_indices,
+                updates=sorted_embed_messages,
+                shape=tf.shape(filler_tensor))
+            # now messages_by_source_tensor has ids in correct positions
+            # and ids which correspond to zero embeddings elsewhere
+            dense_messages += filler_tensor
+            return dense_messages
+
+        if self.network_params.use_sparse:
+            get_message_function = get_specific_sparse_message_tensor
+        else:
+            get_message_function = get_specific_dense_message_tensor
+
         if config.source_only:
             # just split by source node
             # shape: [n, k, 3]
             starting_indices = self.placeholders.in_degree_indices
-            sparse_messages_by_source_only = get_specific_message_tensor(
+            messages_by_source_only = get_message_function(
                 starting_indices, 'nodes')
 
-            argv.append(sparse_messages_by_source_only)
+            argv.append(messages_by_source_only)
 
         if config.source_node_labels:
             # also split by source node label
@@ -106,10 +144,10 @@ class GraphNetwork(object):
             starting_indices = tf.concat(
                 [source_node_labels, self.placeholders.in_degree_indices], axis=1)
 
-            sparse_messages_by_source_label = get_specific_message_tensor(
+            messages_by_source_label = get_message_function(
                 starting_indices, 'node_labels')
 
-            argv.append(sparse_messages_by_source_label)
+            argv.append(messages_by_source_label)
 
         if config.edge_labels:
             # also split by edge label
@@ -118,10 +156,10 @@ class GraphNetwork(object):
             starting_indices = tf.concat(
                 [edge_labels, self.placeholders.in_degree_indices], axis=1)
 
-            sparse_messages_by_edge_label = get_specific_message_tensor(
+            messages_by_edge_label = get_message_function(
                 starting_indices, 'edge_labels')
 
-            argv.append(sparse_messages_by_edge_label)
+            argv.append(messages_by_edge_label)
 
         return argv
 
