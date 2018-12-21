@@ -27,13 +27,14 @@ class BasicDenseLayer(GraphLayer):
     def create_edge_label_embeds(self):
         self.create_default_edge_label_embeds()
 
-    def __call__(self, layer_inputs, current_node_embeds):
-        sparse_node_embeds = self.get_node_embeds_from_sparse_inputs(
-            layer_inputs, current_node_embeds)
+    def __call__(self, input_messages, current_node_embeds):
+        node_embeds = self.get_node_embeds_from_inputs(
+            input_messages, current_node_embeds)
 
-        dense_node_embeds = tf.sparse.to_dense(sparse_node_embeds)
-        dense_summed_messages = tf.reduce_sum(
-            dense_node_embeds, axis=1)
+        if self.network_params.use_sparse:
+            node_embeds = tf.sparse.to_dense(node_embeds)
+        summed_messages = tf.reduce_sum(
+            node_embeds, axis=1)
 
-        transformed_messages = self.dense_layer(dense_summed_messages)
+        transformed_messages = self.dense_layer(summed_messages)
         return transformed_messages
