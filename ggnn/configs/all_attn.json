@@ -1,4 +1,0 @@
-{
-    "attention_mechanism": "scalar-edge-dense",
-    "use_node_pooling_attention": true
-}
