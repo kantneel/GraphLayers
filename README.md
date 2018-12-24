@@ -6,7 +6,7 @@
 - `tqdm`
 
 ### Gated Graph Neural Network Demo
-The main demonstration I've put together is that of a Gated Graph Neural Network (GGNN) based off [this paper](https://arxiv.org/abs/1511.05493). Much of the backend for data processing and running experiments has been borrowed from [here](https://github.com/Microsoft/gated-graph-neural-network-samples). To run a demo, first get the data (will figure this out soon). Then, you can run the example with 
+The main demonstration I've put together is that of a Gated Graph Neural Network (GGNN) based off [Li et. al. (2015)](https://arxiv.org/abs/1511.05493). Much of the backend for data processing and running experiments has been borrowed from [the Microsoft Research implementation](https://github.com/Microsoft/gated-graph-neural-network-samples). To run a demo, first get the data (will figure this out soon). Then, you can run the example with 
 ```
 python3 main.py --train-path <relative path> --valid-path <relative-path> (--use-sparse)
 ```
